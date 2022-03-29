@@ -1,3 +1,1 @@
-# Agora RTSA-Lite SDK
-
-RTSA (Real-time Streaming Acceleration) Lite SDK offers an effective and efficient way to stream digital media (video, voice and data) to and from any IoT devices. All audio and video services provided by the RTSA Lite SDK are deployed and transmitted through the Agora SD-RTN™, which ensures high availability of Agora's service, handles challenging network conditions, and delivers super low end-to-end latency as well.
+# Agora Video Doorbell for ESP32
