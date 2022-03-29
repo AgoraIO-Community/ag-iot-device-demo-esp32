@@ -69,7 +69,7 @@ $ idf.py -p /dev/ttyUSB0 flash monitor
 
 注意：
 1. 请确认开发板上已至少接入了一个扬声器。
-2. 在安卓手机上安装好门铃的客户端 APP: `VideoDoorbell` (https://github.com/AgoraIO-Community/AG-VideoDoorbell-Android)
+2. 在安卓手机上安装好门铃的客户端 APP: [VideoDoorbell](https://github.com/AgoraIO-Community/AG-VideoDoorbell-Android)。
 
 #### Demo 1：门铃呼叫 APP 并进行视频通话
 
