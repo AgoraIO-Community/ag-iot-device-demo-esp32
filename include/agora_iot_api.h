@@ -73,11 +73,11 @@ typedef enum {
   /**
     * 12: PCMA
     */
-  AGO_AUDIO_DATA_TYPE_PCMA = 12,
+  AGO_AUDIO_DATA_TYPE_G711A = 12,
   /**
     * 13: PCMU
     */
-  AGO_AUDIO_DATA_TYPE_PCMU = 13,
+  AGO_AUDIO_DATA_TYPE_G711U = 13,
   /**
      * 14: G722
      */
@@ -96,13 +96,13 @@ typedef struct {
   ago_av_data_type_e data_type;
   bool is_key_frame;
   uint8_t *video_buffer;
-  size_t video_buffer_size;
+  uint32_t video_buffer_size;
 } ago_video_frame_t;
 
 typedef struct {
   ago_av_data_type_e data_type;
   uint8_t *audio_buffer;
-  size_t audio_buffer_size;
+  uint32_t audio_buffer_size;
 } ago_audio_frame_t;
 
 typedef struct _agora_iot_account {
@@ -165,6 +165,47 @@ typedef struct _agora_iot_callback {
   void (*cb_connect_state)(int state);
 } agora_iot_callback_t;
 
+/**
+ * Audio codec type list.
+ */
+typedef enum {
+  /**
+	 * 0: Disable audio codec
+	 */
+  AGO_AUDIO_CODEC_DISABLED = 0,
+  /**
+	 * 1: OPUS
+	 */
+  AGO_AUDIO_CODEC_TYPE_OPUS = 1,
+  /**
+	 * 2: G722
+	 */
+  AGO_AUDIO_CODEC_TYPE_G722 = 2,
+	/**
+	 * 3: G711A
+	 */
+	AGO_AUDIO_CODEC_TYPE_G711A = 3,
+	/**
+	 * 4: G711U
+	 */
+	AGO_AUDIO_CODEC_TYPE_G711U = 4,
+} ago_audio_codec_type_e;
+
+typedef struct _agora_iot_audio_config {
+  /**
+	 * Configure sdk built-in audio codec
+	 */
+  ago_audio_codec_type_e audio_codec_type;
+  /**
+	 * Pcm sample rate. Ignored if audio coded is diabled
+	 */
+  int pcm_sample_rate;
+  /**
+	 * Pcm channel number. Ignored if audio coded is diabled
+	 */
+  int pcm_channel_num;
+} agora_iot_audio_config_t;
+
 typedef struct agora_iot_config {
   /* the product and device's informations */
   const char *app_id;
@@ -185,8 +226,10 @@ typedef struct agora_iot_config {
   bool enable_recv_audio;
   bool enable_recv_video;
   bool disable_rtc_log; // disable low level rtc log
+  uint32_t max_possible_bitrate; // the maxium possible bitrate for the video encoder
 
   agora_iot_callback_t *cb;
+  agora_iot_audio_config_t *audio_config;
 } agora_iot_config_t;
 
 /**

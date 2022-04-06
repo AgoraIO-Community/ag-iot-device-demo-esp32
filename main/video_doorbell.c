@@ -136,7 +136,7 @@ static uint32_t tick_begin = 0;
 static esp_timer_handle_t fps_timer = NULL;
 
 static void *jpg_encoder;
-static audio_element_handle_t i2s_stream_reader, i2s_stream_writer;
+static audio_element_handle_t i2s_stream_reader;
 static audio_element_handle_t raw_read, raw_write, element_algo;
 static audio_pipeline_handle_t recorder, player;
 //static ringbuf_handle_t ringbuf_r, ringbuf_w;
@@ -329,18 +329,6 @@ static esp_err_t recorder_pipeline_open()
   audio_element_set_read_cb(i2s_stream_reader, i2s_stream_read_cb, NULL);
 #endif
 
-  /*   rsp_filter_cfg_t rsp_cfg_r = DEFAULT_RESAMPLE_FILTER_CONFIG();
-  rsp_cfg_r.src_rate = I2S_SAMPLE_RATE;
-  rsp_cfg_r.src_ch = I2S_CHANNELS;
-  rsp_cfg_r.dest_rate = I2S_SAMPLE_RATE;
-#if !defined(CONFIG_ESP_LYRAT_MINI_V1_1_BOARD) && !defined(CONFIG_ESP32_S3_KORVO2_V3_BOARD)
-  rsp_cfg_r.dest_ch = 1;
-#endif
-  rsp_cfg_r.complexity = 5;
-  rsp_cfg_r.task_core = 1;
-  // rsp_cfg_r.out_rb_size = 1024;
-  audio_element_handle_t filter_r = rsp_filter_init(&rsp_cfg_r); */
-
   algorithm_stream_cfg_t algo_config = ALGORITHM_STREAM_CFG_DEFAULT();
 #if defined(CONFIG_ESP_LYRAT_MINI_V1_1_BOARD) || defined(CONFIG_ESP32_S3_KORVO2_V3_BOARD)
   algo_config.input_type = ALGORITHM_STREAM_INPUT_TYPE1;
@@ -355,26 +343,14 @@ static esp_err_t recorder_pipeline_open()
   audio_element_set_music_info(element_algo, I2S_SAMPLE_RATE, 1, I2S_BITS);
 
   audio_pipeline_register(recorder, i2s_stream_reader, "i2s");
-  //audio_pipeline_register(recorder, filter_r, "filter_r");
   audio_pipeline_register(recorder, element_algo, "algo");
 
-  /*   rsp_filter_cfg_t rsp_cfg = DEFAULT_RESAMPLE_FILTER_CONFIG();
-  rsp_cfg.src_rate = I2S_SAMPLE_RATE;
-  rsp_cfg.src_ch = 1;
-  rsp_cfg.dest_rate = I2S_SAMPLE_RATE;
-  rsp_cfg.dest_ch = CODEC_CHANNELS;
-  rsp_cfg.complexity = 5;
-  rsp_cfg.task_core = 1;
-  rsp_cfg.out_rb_size = 1024;
-  audio_element_handle_t filter = rsp_filter_init(&rsp_cfg);
- */
   raw_stream_cfg_t raw_cfg = RAW_STREAM_CFG_DEFAULT();
   raw_cfg.type = AUDIO_STREAM_READER;
   raw_cfg.out_rb_size = 2 * 1024;
   raw_read = raw_stream_init(&raw_cfg);
   audio_element_set_output_timeout(raw_read, portMAX_DELAY);
 
-  //audio_pipeline_register(recorder, filter, "filter");
   audio_pipeline_register(recorder, raw_read, "raw");
 
   const char *link_tag[3] = { "i2s", "algo", "raw" };
@@ -403,7 +379,7 @@ static esp_err_t player_pipeline_open()
   rsp_cfg.dest_ch = I2S_CHANNELS;
   rsp_cfg.complexity = 5;
   rsp_cfg.task_core = 1;
-	rsp_cfg.out_rb_size = 8 * 1024;
+  rsp_cfg.out_rb_size = 8 * 1024;
   audio_element_handle_t filter = rsp_filter_init(&rsp_cfg);
 
   i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
@@ -439,31 +415,8 @@ static void setup_audio(void)
   es7210_mic_select(ES7210_INPUT_MIC1 | ES7210_INPUT_MIC2 | ES7210_INPUT_MIC3 | ES7210_INPUT_MIC4);
   set_es7210_tdm_mode();
 
-#if 0
-  ESP_LOGI(TAG, "Create i2s stream to read/write audio data from/to codec chip");
-  i2s_stream_cfg_t i2s_reader_cfg = I2S_STREAM_CFG_DEFAULT();
-  i2s_reader_cfg.type = AUDIO_STREAM_READER;
-  i2s_reader_cfg.i2s_config.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT;
-  i2s_reader_cfg.i2s_config.sample_rate = 16000;
-  i2s_reader_cfg.stack_in_ext = true;
-  i2s_stream_reader = i2s_stream_init(&i2s_reader_cfg);
-
-  ringbuf_r = rb_create(RING_BUFFER_SIZE, 1);
-  audio_element_set_output_ringbuf(i2s_stream_reader, ringbuf_r);
-
-  i2s_stream_cfg_t i2s_writer_cfg = I2S_STREAM_CFG_DEFAULT();
-  i2s_writer_cfg.type = AUDIO_STREAM_WRITER;
-  i2s_writer_cfg.i2s_config.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT;
-  i2s_writer_cfg.i2s_config.sample_rate = 16000;
-  i2s_writer_cfg.uninstall_drv = false;
-  i2s_stream_writer = i2s_stream_init(&i2s_writer_cfg);
-
-  ringbuf_w = rb_create(RING_BUFFER_SIZE, 1);
-  audio_element_set_input_ringbuf(i2s_stream_writer, ringbuf_w);
-#else
   recorder_pipeline_open();
   player_pipeline_open();
-#endif
 }
 
 static void init_camera(void)
@@ -601,7 +554,6 @@ static void audio_capture_and_send_task(void *threadid)
   audio_pipeline_run(recorder);
   audio_pipeline_run(player);
   while (g_app.b_call_session_started) {
-    //ret = rb_read(ringbuf_r, (char *)pcm_buf, read_len, -1);
     ret = raw_stream_read(raw_read, (char *)pcm_buf, read_len);
     if (ret != read_len) {
       ESP_LOGW(TAG, "write error, expect %d, but only %d", read_len, ret);
@@ -636,11 +588,6 @@ static void iot_cb_start_push_frame()
   ESP_LOGI(TAG, "Start push audio/video frames");
   g_app.b_call_session_started = true;
 
-  //audio_element_run(i2s_stream_reader);
-  //audio_element_run(i2s_stream_writer);
-  //audio_element_resume(i2s_stream_reader, 0, 0);
-  //audio_element_resume(i2s_stream_writer, 0, 0);
-
   rval = xTaskCreatePinnedToCore(video_capture_and_send_task, "video_task", 3 * 1024, NULL, PRIO_TASK_FETCH, NULL, 1);
   if (rval != pdTRUE) {
     ESP_LOGE(TAG, "Unable to create video capture thread!");
@@ -671,15 +618,7 @@ static void iot_cb_call_answered(const char *peer_name)
 
 static void iot_cb_receive_audio(ago_audio_frame_t *frame)
 {
-#if 0
-  int ret;
-  ret = rb_write(ringbuf_w, (char *)frame->audio_buffer, frame->audio_buffer_size, 100);
-  if (ret != frame->audio_buffer_size) {
-    ESP_LOGW(TAG, "write error, expect %d, but only %d", frame->audio_buffer_size, ret);
-  }
-#else
   raw_stream_write(raw_write, (char *)frame->audio_buffer, frame->audio_buffer_size);
-#endif
 }
 
 int app_main(void)
@@ -720,24 +659,36 @@ int app_main(void)
 #endif
 
   // Initialize Agora IoT SDK
-  agora_iot_callback_t cb = { .cb_login_success = iot_cb_login_success,
-                              .cb_call_request = iot_cb_call_request,
-                              .cb_start_push_frame = iot_cb_start_push_frame,
-                              .cb_call_hung_up = iot_cb_call_hung_up,
-                              .cb_call_answered = iot_cb_call_answered,
-                              .cb_receive_audio_frame = iot_cb_receive_audio };
-  agora_iot_config_t cfg = { .app_id = CONFIG_AGORA_APP_ID,
-                             .cloud_rec_basic_auth = BASIC_AUTH,
-                             .product_id = "test_product",
-                             .device_id = CONFIG_DEVICE_ID,
-                             .region = 0,
-                             .self = &g_self,
-                             .enable_rtc = true,
-                             .disable_rtc_log = true,
-                             .certificate = cert_for_test,
-                             .enable_recv_audio = true,
-                             .enable_recv_video = true,
-                             .cb = &cb };
+  agora_iot_callback_t cb = {
+    .cb_login_success = iot_cb_login_success,
+    .cb_call_request = iot_cb_call_request,
+    .cb_start_push_frame = iot_cb_start_push_frame,
+    .cb_call_hung_up = iot_cb_call_hung_up,
+    .cb_call_answered = iot_cb_call_answered,
+    .cb_receive_audio_frame = iot_cb_receive_audio,
+  };
+
+  agora_iot_audio_config_t audio_config = {
+    .audio_codec_type = AGO_AUDIO_CODEC_TYPE_G722,
+    .pcm_sample_rate = 16000,
+    .pcm_channel_num = 1,
+  };
+  agora_iot_config_t cfg = {
+    .app_id = CONFIG_AGORA_APP_ID,
+    .cloud_rec_basic_auth = BASIC_AUTH,
+    .product_id = "test_product",
+    .device_id = CONFIG_DEVICE_ID,
+    .region = 0,
+    .self = &g_self,
+    .enable_rtc = true,
+    .disable_rtc_log = true,
+    .certificate = cert_for_test,
+    .enable_recv_audio = true,
+    .enable_recv_video = true,
+    .cb = &cb,
+    .audio_config = &audio_config,
+  };
+
   g_handle = agora_iot_init(&cfg);
   if (!g_handle) {
     // if failed to initialize, no need to deinitialize
