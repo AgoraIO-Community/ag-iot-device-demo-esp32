@@ -73,6 +73,8 @@
 #define CODEC_CHANNELS 1
 #define ESP_READ_BUFFER_SIZE 1024
 
+#define DEFAULT_MAX_BITRATE (2000000)
+
 typedef struct {
   bool b_wifi_connected;
   bool b_login_success;
@@ -136,7 +138,6 @@ static uint32_t tick_begin = 0;
 static esp_timer_handle_t fps_timer = NULL;
 
 static void *jpg_encoder;
-static audio_element_handle_t i2s_stream_reader;
 static audio_element_handle_t raw_read, raw_write, element_algo;
 static audio_pipeline_handle_t recorder, player;
 //static ringbuf_handle_t ringbuf_r, ringbuf_w;
@@ -682,6 +683,7 @@ int app_main(void)
     .self = &g_self,
     .enable_rtc = true,
     .disable_rtc_log = true,
+    .max_possible_bitrate = DEFAULT_MAX_BITRATE,
     .certificate = cert_for_test,
     .enable_recv_audio = true,
     .enable_recv_video = true,
