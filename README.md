@@ -7,7 +7,7 @@
 本例程演示了如何通过乐鑫 ESP32-S3 Korvo V3 开发板和一个安卓手机，模拟一个典型的视频门铃场景，可以演示按门铃键呼叫手机 APP 端，APP 端接听；或是手机 APP 实时查看门铃端的摄像头画面。
 
 ### 文件结构
-···
+```
 ├── CMakeLists.txt
 ├── components                                  Agora iot sdk component
 │   ├── agora_iot_sdk
@@ -47,7 +47,7 @@
 ├── README.md
 ├── sdkconfig.defaults
 └── sdkconfig.defaults.esp32s3
-···
+```
 
 ## 环境配置
 
