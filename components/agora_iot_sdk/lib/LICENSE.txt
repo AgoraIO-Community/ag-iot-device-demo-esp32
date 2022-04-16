@@ -1,0 +1,10 @@
+********************************************
+/* Copyright @ Agora, all rights reserved
+/* This product and all associated components, source code, APIs, services, and
+/* documentation (the “Materials”) are owned by Agora, Inc., its affiliates (“Agora”)
+/* and its licensors. The Materials may not be accessed, used, modified, distributed
+/* or otherwise deployed for any purpose without a license from Agora.
+/* Use without a license or in violation of any license terms and conditions (including
+/* use for any purpose competitive to Agora’s business) is strictly prohibited.
+/* For more information, please contact agoralegal@agora.io
+*********************************************
