@@ -6,6 +6,7 @@
 //#define CONFIG_REGISTER_NEW_DEVICE
 
 #define CONFIG_ENABLE_LOW_POWER_MODE
+#define CONFIG_AUDIO_SAMPLE_RATE_8K
 
 #define FRAMESIZE (1) // 0 for QVGA and 1 for HVGA, 2 for VGA
 

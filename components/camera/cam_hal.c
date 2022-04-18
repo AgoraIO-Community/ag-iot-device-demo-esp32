@@ -378,9 +378,9 @@ esp_err_t cam_config(const camera_config_t *config, framesize_t frame_size, uint
 
     
 #if CONFIG_CAMERA_CORE0
-    xTaskCreatePinnedToCore(cam_task, "cam_task", 2048, NULL, configMAX_PRIORITIES - 2, &cam_obj->task_handle, 0);
+    xTaskCreatePinnedToCore(cam_task, "cam_task", 2560, NULL, configMAX_PRIORITIES - 2, &cam_obj->task_handle, 0);
 #elif CONFIG_CAMERA_CORE1
-    xTaskCreatePinnedToCore(cam_task, "cam_task", 2048, NULL, configMAX_PRIORITIES - 2, &cam_obj->task_handle, 1);
+    xTaskCreatePinnedToCore(cam_task, "cam_task", 2560, NULL, configMAX_PRIORITIES - 2, &cam_obj->task_handle, 1);
 #else
     xTaskCreate(cam_task, "cam_task", 2048, NULL, configMAX_PRIORITIES - 2, &cam_obj->task_handle);
 #endif
