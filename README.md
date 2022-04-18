@@ -133,16 +133,16 @@ esptool.py --chip esp32s3 \
 注意：
 
 1. 请确认开发板上已至少接入了一个扬声器。
-2. 在安卓手机上安装好门铃的客户端 APP: [VideoDoorbell](https://github.com/AgoraIO-Community/AG-VideoDoorbell-Android/blob/master/release)。
+2. 在安卓手机上安装好门铃的客户端 APP: [Video Doorbell](https://github.com/AgoraIO-Community/AG-VideoDoorbell-Android/blob/master/release)。
 
 #### Demo 1：门铃呼叫 APP 并进行视频通话
 
-1. 打开安卓手机上的 `VideoDoorbell` APP。
+1. 打开安卓手机上的 `Video Doorbell` APP。
 2. 选择 `作为移动应用运行` -> 勾选 `双向通话` -> 点击 `确定`，进入注册/登录界面。
 3. 在 `请输入账号` 的地方输入 `jack` -> 点击 `登录`。
 4. 回到开发板（门铃端），再次确认上述的固件编译、下载步骤已经完成，并看到串口每隔几秒打印出："Agora: Press [REC] key to ring the doorbell ..."
 5. 按一下 `[REC]` 按键，对 `jack` 用户进行呼叫。
-6. `VideoDoorbell` APP 会弹出被呼界面，显示 `有人按门铃`，并等待您的接听。同时您已经可以看到门铃端的实时画面，听到门铃端的声音，但此时无法和门铃端对话。
+6. `Video Doorbell` APP 会弹出被呼界面，显示 `有人按门铃`，并等待您的接听。同时您已经可以看到门铃端的实时画面，听到门铃端的声音，但此时无法和门铃端对话。
 7. 在 APP 端点击 `接听`，随即就能和门铃端实时对讲了。
 8. 在 APP 端点击 `挂断`，结束和门铃端的通话。
 
