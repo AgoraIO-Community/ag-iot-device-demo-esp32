@@ -133,7 +133,7 @@ esptool.py --chip esp32s3 \
 注意：
 
 1. 请确认开发板上已至少接入了一个扬声器。
-2. 在安卓手机上安装好门铃的客户端 APP: [VideoDoorbell](https://github.com/AgoraIO-Community/AG-VideoDoorbell-Android)。
+2. 在安卓手机上安装好门铃的客户端 APP: [VideoDoorbell](https://github.com/AgoraIO-Community/AG-VideoDoorbell-Android/blob/master/release)。
 
 #### Demo 1：门铃呼叫 APP 并进行视频通话
 
@@ -150,7 +150,7 @@ esptool.py --chip esp32s3 \
 
 #### Demo 2：APP 远程唤醒门铃并进行视频通话
 
-&ensp;&ensp;&ensp;&ensp;步骤 1 ~ 4 同 Demo 1。
+步骤 1 ~ 4 同 Demo 1。
 
 5. 在 `要呼叫的设备账号` 的地方输入 `mydoorbeel` -> 点击 `呼叫`。
 6. 随即就能看到门铃端的实时画面了，并且可以和门铃端实时对讲。APP 端出图时间通常在 1 秒左右。
