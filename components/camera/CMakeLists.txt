@@ -15,6 +15,8 @@ set(camera_src
 	"sensors/gc2145.c"
 	"sensors/gc032a.c"
 	"sensors/bf3005.c"
+	"sensors/bf20a6.c"
+    	"sensors/sc030iot.c"
 	"conversions/yuv.c"
 	"conversions/to_jpg.cpp"
 	"conversions/to_bmp.c"

@@ -1,0 +1,9 @@
+menu "QRCode configuration"
+
+    config QUIRC_SUPPORT
+        bool "Support QRCode"
+        default y
+        help
+            Enable this option if you want to support QRCode.
+            Disable this option to disable QRCode.
+endmenu

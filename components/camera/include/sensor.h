@@ -27,6 +27,8 @@ typedef enum {
     GC032A_PID = 0x232a,
     GC0308_PID = 0x9b,
     BF3005_PID = 0x30,
+    BF20A6_PID = 0x20a6,
+    SC030IOT_PID = 0x9a46,
 } camera_pid_t;
 
 typedef enum {
@@ -40,6 +42,8 @@ typedef enum {
     CAMERA_GC032A,
     CAMERA_GC0308,
     CAMERA_BF3005,
+    CAMERA_BF20A6,
+    CAMERA_SC030IOT,
     CAMERA_MODEL_MAX,
     CAMERA_NONE,
 } camera_model_t;
@@ -55,6 +59,8 @@ typedef enum {
     GC032A_SCCB_ADDR   = 0x21,// 0x42 >> 1
     GC0308_SCCB_ADDR   = 0x21,// 0x42 >> 1
     BF3005_SCCB_ADDR   = 0x6E,
+    BF20A6_SCCB_ADDR   = 0x6E,
+    SC030IOT_SCCB_ADDR = 0x68,// 0xd0 >> 1
 } camera_sccb_addr_t;
 
 typedef enum {
