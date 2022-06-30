@@ -59,7 +59,7 @@
 
 ### 默认 IDF 分支
 
-本例程支持 IDF release/v[4.4] 及以后的分支，例程默认使用 IDF release/v[4.4] 分支。
+本例程支持 IDF release/v4.4 及以后的分支，例程默认使用 IDF release/v4.4 分支。
 
 选择 IDF 分支的方法，如下所示：
 
@@ -70,14 +70,14 @@ git pull
 git submodule update --init --recursive
 ```
 
-本例程支持 ADF 最新的 master 分支
-
 ### 打上 IDF 补丁
 
 本例程还需给 IDF 合入1个 patch， 合入命令如下：
 cd $IDF_PATH
 git apply $ADF_PATH/idf_patches/idf_v4.4_freertos.patch
 
+### ADF 分支
+本例程支持 ADF v2.4 以及 master 分支
 
 ### 编译固件
 
@@ -87,7 +87,7 @@ $ export ADF_PATH=~/esp/esp-adf
 $ . $HOME/esp/esp-idf/export.sh
 $ cd ~/esp/agora-demo-for-esp32
 $ idf.py set-target esp32s3
-$ idf.py menuconfig	--> Agora Demo for ESP32 --> (配置 WIFI SSID 和 Password)
+$ idf.py menuconfig --> Agora Demo for ESP32 --> (配置 WIFI SSID 和 Password)
 $ idf.py build
 ```
 

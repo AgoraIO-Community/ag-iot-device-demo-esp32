@@ -164,6 +164,7 @@ static camera_config_t camera_config = {
     .jpeg_quality = 12, // 0-63 lower number means higher quality
     .fb_count = 2, // if more than one, i2s runs in continuous mode. Use only with JPEG
     .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
+    .conv_mode = YUV422_TO_YUV420,
 };
 
 static agora_iot_account g_self = { .name = CONFIG_DEVICE_ID, .type = TYPE_DEVICE, .uid = 0 };
@@ -464,7 +465,7 @@ static void *init_jpeg_encoder(int quality, int hfm_core, int hfm_priority, jpeg
     jpeg_enc_info_t jpeg_enc_info = { 0 };
     jpeg_enc_info.width = CAMERA_WIDTH;
     jpeg_enc_info.height = CAMERA_HIGH;
-    jpeg_enc_info.src_type = JPEG_RAW_TYPE_YCbYCr;
+    jpeg_enc_info.src_type = JPEG_RAW_TYPE_YCbY2YCrY2;
     jpeg_enc_info.subsampling = subsampling;
     jpeg_enc_info.quality = quality;
     // jpeg_enc_info.task_enable = true;
