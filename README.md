@@ -149,7 +149,9 @@ esptool.py --chip esp32s3 \
 设备端Demo源码中，你只需要修改main/app_config.h中的以下参数即可：
 
 #define CONFIG_AGORA_APP_ID "4b31f****************************3037"
+
 #define CONFIG_CUSTOMER_KEY "8620f******************************7363"
+
 #define CONFIG_CUSTOMER_SECRET "492c1****************************e802"
 
 #define CONFIG_USER_ID "6875*********3440" 
