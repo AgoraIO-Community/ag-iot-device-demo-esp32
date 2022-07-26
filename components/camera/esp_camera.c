@@ -230,6 +230,22 @@ static esp_err_t camera_probe(const camera_config_t *config, camera_model_t *out
     return ESP_OK;
 }
 
+#if CONFIG_IDF_TARGET_ESP32S3
+static pixformat_t get_output_data_format(camera_conv_mode_t conv_mode)
+{
+    pixformat_t format = PIXFORMAT_RGB565;
+    switch (conv_mode) {
+    case YUV422_TO_YUV420:
+        format = PIXFORMAT_YUV420;
+        break;
+    
+    default:
+        break;
+    }
+    return format;
+}
+#endif
+
 esp_err_t esp_camera_init(const camera_config_t *config)
 {
     esp_err_t err;
@@ -268,6 +284,12 @@ esp_err_t esp_camera_init(const camera_config_t *config)
 
     s_state->sensor.status.framesize = frame_size;
     s_state->sensor.pixformat = pix_format;
+#if CONFIG_IDF_TARGET_ESP32S3
+    if(config->conv_mode) {
+        s_state->sensor.pixformat = get_output_data_format(config->conv_mode); // If conversion enabled, change the out data format by conversion mode
+    }
+#endif
+
     ESP_LOGD(TAG, "Setting frame size to %dx%d", resolution[frame_size].width, resolution[frame_size].height);
     if (s_state->sensor.set_framesize(&s_state->sensor, frame_size) != 0) {
         ESP_LOGE(TAG, "Failed to set frame size");

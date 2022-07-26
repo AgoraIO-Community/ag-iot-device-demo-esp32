@@ -376,7 +376,7 @@ int activate_device(device_handle_t dev_state)
   // 1. activate license
 #ifdef CONFIG_LICENSE
   if (0 != agora_iot_license_activate(CONFIG_AGORA_APP_ID, CONFIG_CUSTOMER_KEY,
-                                      CONFIG_CUSTOMER_SECRET, device_id, &cert)) {
+                                      CONFIG_CUSTOMER_SECRET, CONFIG_PRODUCT_KEY, device_id, &cert)) {
     ESP_LOGE(TAG, "cannot activate agora license !\n");
     goto activate_err;
   }

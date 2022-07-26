@@ -156,9 +156,12 @@ static camera_config_t camera_config = {
   .jpeg_quality = 12, // 0-63 lower number means higher quality
   .fb_count     = 2, // if more than one, i2s runs in continuous mode. Use only with JPEG
   .grab_mode    = CAMERA_GRAB_WHEN_EMPTY,
+  // .conv_mode    = YUV422_TO_YUV420,
 };
 
 static agora_iot_handle_t g_handle = NULL;
+static device_handle_t dev_state = NULL;
+
 
 static uint32_t image_cnt = 0;
 static uint32_t tick_begin = 0;
@@ -168,6 +171,8 @@ static void *jpg_encoder;
 static audio_element_handle_t raw_read, raw_write, element_algo;
 static audio_pipeline_handle_t recorder, player;
 // static ringbuf_handle_t ringbuf_r, ringbuf_w;
+static SemaphoreHandle_t g_video_capture_sem  = NULL;
+static SemaphoreHandle_t g_audio_capture_sem  = NULL;
 
 static QueueHandle_t    g_qr_queue;
 
@@ -214,11 +219,13 @@ static void fps_timer_callback(void *arg)
 
 static esp_err_t input_key_service_cb(periph_service_handle_t handle, periph_service_event_t *evt, void *ctx)
 {
-  device_handle_t dev_state = (device_handle_t)ctx;
   if (evt->type == INPUT_KEY_SERVICE_ACTION_CLICK) {
     switch ((int)evt->data) {
     case INPUT_KEY_USER_ID_REC: {
       char *user_account = NULL;
+      if (g_handle == NULL) {
+        return ESP_FAIL;
+      }
       if (0 != device_get_item_string(dev_state, "bind_user", &user_account)) {
         ESP_LOGE(TAG, "cannot found user_id from device state.\n");
         return ESP_FAIL;
@@ -231,6 +238,10 @@ static esp_err_t input_key_service_cb(periph_service_handle_t handle, periph_ser
       }
     } break;
     case INPUT_KEY_USER_ID_VOLUP:
+      if (g_handle == NULL) {
+        return ESP_FAIL;
+      }
+
       ESP_LOGW(TAG, "Hang up the call.");
       agora_iot_hang_up(g_handle);
       g_app.b_call_session_started = false;
@@ -239,6 +250,10 @@ static esp_err_t input_key_service_cb(periph_service_handle_t handle, periph_ser
       ESP_LOGW(TAG, "Now exiting the app...");
       g_app.b_exit = true;
       break;
+    case INPUT_KEY_USER_ID_SET:{
+      esp_err_t ret = nvs_flash_erase_partition("nvs");
+      ESP_LOGW(TAG, "Erase the nvs flash %d...", ret);
+    } break;
     default:
       ESP_LOGE(TAG, "User Key ID[%d] does not support", (int)evt->data);
       break;
@@ -248,7 +263,7 @@ static esp_err_t input_key_service_cb(periph_service_handle_t handle, periph_ser
   return ESP_OK;
 }
 
-static void start_key_service(device_handle_t dev_state)
+static void start_key_service(void)
 {
   ESP_LOGI(TAG, "Initialize peripherals");
   esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
@@ -262,11 +277,11 @@ static void start_key_service(device_handle_t dev_state)
   input_key_service_cfg_t input_cfg = INPUT_KEY_SERVICE_DEFAULT_CONFIG();
   input_cfg.handle                 = set;
   input_cfg.based_cfg.task_stack   = 5 * 1024;
-  input_cfg.based_cfg.extern_stack = true;
+  // input_cfg.based_cfg.extern_stack = true;
   periph_service_handle_t input_ser = input_key_service_create(&input_cfg);
 
   input_key_service_add_key(input_ser, input_key_info, INPUT_KEY_NUM);
-  periph_service_set_callback(input_ser, input_key_service_cb, dev_state);
+  periph_service_set_callback(input_ser, input_key_service_cb, NULL);
 }
 
 static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
@@ -504,7 +519,7 @@ static void video_capture_and_send_task(void *args)
 #ifdef CONFIG_ENABLE_RUN_TIME_STATS
   esp_timer_create_args_t create_args = { .callback = fps_timer_callback, .arg = NULL, .name = "fps timer" };
   esp_timer_create(&create_args, &fps_timer);
-  esp_timer_start_periodic(fps_timer, 5 * 1000 * 1000);
+  esp_timer_start_periodic(fps_timer, 20 * 1000 * 1000);
   tick_begin = xTaskGetTickCount();
   image_cnt = 0;
 #endif
@@ -515,17 +530,22 @@ static void video_capture_and_send_task(void *args)
     return;
   }
 
-  while (g_app.b_call_session_started) {
-    camera_fb_t *pic = esp_camera_fb_get();
-    image_cnt++;
+  while (1) {
+    xSemaphoreTake(g_video_capture_sem, portMAX_DELAY);
 
-    jpeg_enc_process(jpg_encoder, pic->buf, pic->len, image_buf, image_buf_len, &image_len);
+    while (g_app.b_call_session_started) {
+      camera_fb_t *pic = esp_camera_fb_get();
+      image_cnt++;
 
-    send_video_frame(image_buf, image_len);
+      jpeg_enc_process(jpg_encoder, pic->buf, pic->len, image_buf, image_buf_len, &image_len);
 
-    esp_camera_fb_return(pic);
+      send_video_frame(image_buf, image_len);
+
+      esp_camera_fb_return(pic);
+    }
   }
   free(image_buf);
+  jpeg_enc_close(jpg_encoder);
 
 #ifdef CONFIG_ENABLE_RUN_TIME_STATS
   esp_timer_stop(fps_timer);
@@ -548,17 +568,52 @@ static void audio_capture_and_send_task(void *threadid)
   audio_pipeline_run(recorder);
   audio_pipeline_run(player);
 
-  while (g_app.b_call_session_started) {
-    ret = raw_stream_read(raw_read, (char *)pcm_buf, read_len);
-    if (ret != read_len) {
-      ESP_LOGW(TAG, "write error, expect %d, but only %d", read_len, ret);
-    }
+  while (1) {
+    xSemaphoreTake(g_audio_capture_sem, portMAX_DELAY);
 
-    send_audio_frame(pcm_buf, DEFAULT_PCM_CAPTURE_LEN);
+    while (g_app.b_call_session_started) {
+      ret = raw_stream_read(raw_read, (char *)pcm_buf, read_len);
+      if (ret != read_len) {
+        ESP_LOGW(TAG, "write error, expect %d, but only %d", read_len, ret);
+      }
+      send_audio_frame(pcm_buf, DEFAULT_PCM_CAPTURE_LEN);
+    }
   }
+
+  audio_pipeline_terminate(recorder);
+  audio_pipeline_terminate(player);
 
   free(pcm_buf);
   vTaskDelete(NULL);
+}
+
+static void create_capture_task(void)
+{
+  int rval;
+
+#ifndef CONFIG_AUDIO_ONLY
+  g_video_capture_sem = xSemaphoreCreateBinary();
+  if (NULL == g_video_capture_sem) {
+    ESP_LOGE(TAG, "Unable to create video capture semaphore!");
+    return;
+  }
+  rval = xTaskCreatePinnedToCore(video_capture_and_send_task, "video_task", 3 * 1024, NULL, PRIO_TASK_FETCH, NULL, 1);
+  if (rval != pdTRUE) {
+    ESP_LOGE(TAG, "Unable to create video capture thread!");
+    return;
+  }
+#endif
+
+  g_audio_capture_sem = xSemaphoreCreateBinary();
+  if (NULL == g_audio_capture_sem) {
+    ESP_LOGE(TAG, "Unable to create audio capture semaphore!");
+    return;
+  }
+  rval = xTaskCreatePinnedToCore(audio_capture_and_send_task, "audio_task", 3 * 1024, NULL, PRIO_TASK_FETCH, NULL, 1);
+  if (rval != pdTRUE) {
+    ESP_LOGE(TAG, "Unable to create audio capture thread!");
+    return;
+  }
 }
 
 static void iot_cb_call_request(const char *peer_name, const char *attach_msg)
@@ -574,22 +629,14 @@ static void iot_cb_call_request(const char *peer_name, const char *attach_msg)
 
 static void iot_cb_start_push_frame(void)
 {
-  int rval;
-
   ESP_LOGI(TAG, "Start push audio/video frames");
   g_app.b_call_session_started = true;
 
-  rval = xTaskCreatePinnedToCore(video_capture_and_send_task, "video_task", 3 * 1024, NULL, PRIO_TASK_FETCH, NULL, 1);
-  if (rval != pdTRUE) {
-    ESP_LOGE(TAG, "Unable to create video capture thread!");
-    return;
-  }
+#ifndef CONFIG_AUDIO_ONLY
+  xSemaphoreGive(g_video_capture_sem);
+#endif
 
-  rval = xTaskCreatePinnedToCore(audio_capture_and_send_task, "audio_task", 3 * 1024, NULL, PRIO_TASK_FETCH, NULL, 1);
-  if (rval != pdTRUE) {
-    ESP_LOGE(TAG, "Unable to create audio capture thread!");
-    return;
-  }
+  xSemaphoreGive(g_audio_capture_sem);
 }
 
 static void iot_cb_stop_push_frame(void)
@@ -844,9 +891,9 @@ static int device_connect_network(char *ssid, char *psw)
   ESP_ERROR_CHECK(esp_wifi_start());
 
   ESP_LOGI(TAG, "esp_wifi_set_ps().");
-  #ifdef CONFIG_ENABLE_LOW_POWER_MODE
+#ifdef CONFIG_ENABLE_LOW_POWER_MODE
   esp_wifi_set_ps(DEFAULT_PS_MODE);
-  #else
+#else
   esp_wifi_set_ps(WIFI_PS_NONE);
 #endif
 
@@ -951,7 +998,7 @@ static agora_iot_handle_t connect_agora_iot_service(device_handle_t dev_state)
 
   if (0 != device_get_item_string(dev_state, "dev_crt", &dev_crt) ||
       0 != device_get_item_string(dev_state, "dev_key", &dev_key) ||
-      0 != device_get_item_string(dev_state, "domain", &domain) ||
+      0 != device_get_item_string(dev_state, "domain", &domain)   ||
       0 != device_get_item_string(dev_state, "client_id", &client_id)) {
     ESP_LOGE(TAG, "cannot found dev_crt or dev_key or domain in device state items\n");
     goto agora_iot_err;
@@ -1037,8 +1084,6 @@ agora_iot_err:
 
 int app_main(void)
 {
-  device_handle_t dev_state = NULL;
-
   // Initialize NVS
   esp_err_t ret = nvs_flash_init();
   if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -1064,6 +1109,8 @@ int app_main(void)
     goto EXIT;
   }
 
+  create_capture_task();
+
 #ifdef CONFIG_SDCARD
     ESP_LOGI(TAG, "[1.0] Mount sdcard");
     // Initialize peripherals management
@@ -1072,6 +1119,9 @@ int app_main(void)
     // Initialize SD Card peripheral
     audio_board_sdcard_init(set, SD_MODE_1_LINE);
 #endif
+
+  // Monitor the key event
+  start_key_service();
 
   g_app.up_mode = SYS_UP_MODE_POWERON;
 
@@ -1092,9 +1142,6 @@ int app_main(void)
     goto EXIT;
   }
 
-  // Monitor the "REC" key event
-  start_key_service(dev_state);
-
   // update device state
   if (0 != update_device_work_state(g_handle, g_app.up_mode)) {
     ESP_LOGE(TAG, "agora_iot_init failed\n");
@@ -1114,11 +1161,6 @@ int app_main(void)
 
 EXIT:
   // Deinit Agora IoT SDK
-
-  if (jpg_encoder) {
-    jpeg_enc_close(jpg_encoder);
-  }
-
   if (g_handle) { 
     agora_iot_deinit(g_handle);
   }

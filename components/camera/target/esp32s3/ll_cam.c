@@ -74,7 +74,7 @@ static void IRAM_ATTR ll_cam_dma_isr(void *arg)
     }
 }
 
-bool ll_cam_stop(cam_obj_t *cam)
+bool IRAM_ATTR ll_cam_stop(cam_obj_t *cam)
 {
     if (cam->jpeg_mode || !cam->psram_mode) {
         GDMA.channel[cam->dma_num].in.int_ena.in_suc_eof = 0;
@@ -214,6 +214,27 @@ esp_err_t ll_cam_config(cam_obj_t *cam, const camera_config_t *config)
     LCD_CAM.cam_ctrl1.cam_vh_de_mode_en = 0;
 
     LCD_CAM.cam_rgb_yuv.val = 0;
+    if (config->conv_mode == YUV422_TO_YUV420) {
+        if (config->pixel_format != PIXFORMAT_YUV422) {
+            ESP_LOGE(TAG, "format config err");
+        } else {
+            ESP_LOGW(TAG, "In YUV422 to YUV420 mode");
+            LCD_CAM.cam_rgb_yuv.cam_conv_yuv2yuv_mode = 1;
+            LCD_CAM.cam_rgb_yuv.cam_conv_yuv_mode = 0;
+#if CONFIG_LCD_CAM_CONV_BT709_ENABLED
+            LCD_CAM.cam_rgb_yuv.cam_conv_protocol_mode = 1;
+#else
+            LCD_CAM.cam_rgb_yuv.cam_conv_protocol_mode = 0;
+#endif
+            LCD_CAM.cam_rgb_yuv.cam_conv_data_out_mode = 0;
+            LCD_CAM.cam_rgb_yuv.cam_conv_data_in_mode = 0;
+            LCD_CAM.cam_rgb_yuv.cam_conv_mode_8bits_on = 1;
+            LCD_CAM.cam_rgb_yuv.cam_conv_trans_mode = 1;
+            LCD_CAM.cam_rgb_yuv.cam_conv_bypass = 1;
+
+            cam->conv_mode = config->conv_mode;
+        }
+    }
 
     LCD_CAM.cam_ctrl.cam_update = 1;
     LCD_CAM.cam_ctrl1.cam_start = 1;
@@ -404,7 +425,7 @@ bool ll_cam_dma_sizes(cam_obj_t *cam)
 
 size_t IRAM_ATTR ll_cam_memcpy(cam_obj_t *cam, uint8_t *out, const uint8_t *in, size_t len)
 {
-    // YUV to Grayscale
+    // YUV422 to Grayscale
     if (cam->in_bytes_per_pixel == 2 && cam->fb_bytes_per_pixel == 1) {
         size_t end = len / 8;
         for (size_t i = 0; i < end; ++i) {
@@ -417,6 +438,7 @@ size_t IRAM_ATTR ll_cam_memcpy(cam_obj_t *cam, uint8_t *out, const uint8_t *in, 
         }
         return len / 2;
     }
+    
 
     // just memcpy
     memcpy(out, in, len);
@@ -433,8 +455,13 @@ esp_err_t ll_cam_set_sample_mode(cam_obj_t *cam, pixformat_t pix_format, uint32_
         }
         cam->fb_bytes_per_pixel = 1;       // frame buffer stores Y8
     } else if (pix_format == PIXFORMAT_YUV422 || pix_format == PIXFORMAT_RGB565) {
-            cam->in_bytes_per_pixel = 2;       // camera sends YU/YV
+        if(cam->conv_mode == YUV422_TO_YUV420) {
+            cam->in_bytes_per_pixel = 1.5;       // camera sensor sends YU/YV
+            cam->fb_bytes_per_pixel = 1.5;       // frame buffer stores YUV420
+        } else {
+            cam->in_bytes_per_pixel = 2;       // camera sensor sends YU/YV
             cam->fb_bytes_per_pixel = 2;       // frame buffer stores YU/YV/RGB565
+        }
     } else if (pix_format == PIXFORMAT_JPEG) {
         cam->in_bytes_per_pixel = 1;
         cam->fb_bytes_per_pixel = 1;
