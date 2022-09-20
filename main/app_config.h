@@ -11,6 +11,8 @@
 // Agora Slave Server URL
 #define CONFIG_SLAVE_SERVER_URL "https://api.agora.io/agoralink/cn/api"
 
+#define CONFIG_LICENSE_PID "00F8D46F5xxxxx22646"
+
 // Found product key form device manager platform
 #define CONFIG_PRODUCT_KEY "EJIJ********5lI4"
 

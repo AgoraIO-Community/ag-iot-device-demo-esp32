@@ -374,22 +374,11 @@ int activate_device(device_handle_t dev_state)
   device_id = get_device_id();
 
   // 1. activate license
-#ifdef CONFIG_LICENSE
-  if (0 != agora_iot_license_activate(CONFIG_AGORA_APP_ID, CONFIG_CUSTOMER_KEY,
-                                      CONFIG_CUSTOMER_SECRET, CONFIG_PRODUCT_KEY, device_id, &cert)) {
+  if (0 != agora_iot_license_activate(CONFIG_AGORA_APP_ID, CONFIG_CUSTOMER_KEY, CONFIG_CUSTOMER_SECRET,
+                                      CONFIG_PRODUCT_KEY, device_id, CONFIG_LICENSE_PID, &cert)) {
     ESP_LOGE(TAG, "cannot activate agora license !\n");
     goto activate_err;
   }
-#else
-#define CERT_TEST_BUF_LEN   1024
-  cert = (char *)malloc(CERT_TEST_BUF_LEN);
-  if (NULL == cert) {
-    ESP_LOGE(TAG, "cannot malloc buffer for license !\n");
-    goto activate_err;
-  }
-  memset(cert, 0, CERT_TEST_BUF_LEN);
-  strncpy(cert, certificate_for_test, CERT_TEST_BUF_LEN);
-#endif
   device_set_item_string(dev_state, "license", cert);
 
   // 2. register DP service
@@ -419,7 +408,7 @@ int activate_device(device_handle_t dev_state)
 
   // 3. get bind user info
   char user_account[64] = { 0 };
-  int rval = agora_iot_query_user(CONFIG_MASTER_SERVER_URL, product_key, device_id, user_account);
+  int rval = agora_iot_query_user(CONFIG_MASTER_SERVER_URL, product_key, device_id, user_account, AGORA_IOT_CLIENT_ID_MAX_LEN);
   if (0 != rval) {
     ESP_LOGE(TAG, "query device manager user failed\n");
     goto activate_err;

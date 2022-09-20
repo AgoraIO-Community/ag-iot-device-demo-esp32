@@ -76,31 +76,6 @@ typedef enum {
   ERR_AG_SERVER_UNEXPECTEDLY_ERROR = -999999,
 } agora_iot_call_result_e;
 
-typedef enum {
-  /* Voice detection */
-  AG_ALARM_TYPE_VAD           = 0,
-  /* Motion detection */
-  AG_ALARM_TYPE_MOD           = 1,
-  /* Others */
-  AG_ALARM_TYPE_OTHERS        = 99
-} agora_iot_alarm_type_e;
-
-typedef struct agora_alarm_file_info {
-  /* The name of the file, don't include the path, only support .jpg, .jpeg and .png files. */
-  char *name;
-  /* The buffer of the file */
-  char *buf;
-  /* The size of the file, the max size is 512kb */
-  int size;
-
-  /* Rename the file while storing in the server after uploading
-   * true: auto-generate a new unique file name in the server;
-   * false: keep the name, and you should make all of the files' names different to upload,
-   * otherwise the new one will cover the old one with the same name.
-   */
-  bool rename;
-} agora_alarm_file_info_t;
-
 typedef struct agora_iot_call_callback {
   /******************** Event Callback related to Call *******************/
   /**
@@ -179,29 +154,6 @@ agora_iot_call_result_e agora_iot_answer(agora_iot_handle_t handle);
  *         < 0: failure, refer to agora_iot_call_result_e
  */
 agora_iot_call_result_e agora_iot_hang_up(agora_iot_handle_t handle);
-
-/**
- * @brief Alarm to others and start cloud recording
- *
- * @param[in] handle          The instance of Agora IoT
- * @param[in] peer            The peer name, which should be the binding user ID
- * @param[in] extra_msg       The string of the extra message, the max length is 1024 bytes(include '\0').
- * @param[in] type            The type of alarm. Some Pre-define types reference to agora_iot_alarm_type_e.
- * @param[in] file_info       Refer to the agora_alarm_file_info_t.
- * @return = 0: success;
- *         < 0: failure, refor to agora_iot_call_result_e
- */
-agora_iot_call_result_e agora_iot_alarm(agora_iot_handle_t handle, const char *peer, const char *extra_msg, int8_t type,
-                    const agora_alarm_file_info_t *file_info);
-
-/**
- * @brief Cancel the current alarm and stop cloud recording
- *
- * @param[in] handle          The instance of Agora IoT
- * @return = 0: success;
- *         < 0: failure, refer to agora_iot_call_result_e
- */
-agora_iot_call_result_e agora_iot_alarm_cancel(agora_iot_handle_t handle);
 
 #ifdef __cplusplus
 }

@@ -50,13 +50,15 @@ typedef struct agora_iot_device_info {
  *
  * @param[in] host_url:       AWS open api host url
  * @param[in] product_key:    Product id is created when creating a product on console
- * @param[in] device_id:      The device unique ID, eg. MAC address,
- *                            Length should be less than 64 bytes
+ * @param[in] device_id:      The device unique ID,
+ *                            Length should be no mora than 16 bytes
  *                            Supported character scopes are:
- *                            - The 26 uppercase English letters: A to Z
+ *                            - The 26 English letters: A to Z or a to z
  *                            - The 10 numbers: 0 to 9
- * @param[in] user_id:        The user id from application
- * @param[in] device_nickname:The device nickname on mobile phone to display
+ * @param[in] user_id:        The user id from application.
+ *                            If you only need the pure call-server, the user_id should be NULL.
+ * @param[in] device_nickname:The device nickname on mobile phone to display.
+ *                            If you only need the pure call-server, the user_id should be NULL.
  * @param[out] info:          The returned information for sdk init
  * @return
  * - = 0: success;
@@ -67,20 +69,22 @@ int agora_iot_register_and_bind(const char *host_url, const char *product_key, c
 
 /**
  * @brief Query the user binding with device
+ * If you only need the call-server, you should not call this API due to it would return failure in the pure call-server.
  *
  * @param[in] host_url:       AWS open api host url
  * @param[in] product_key:    Product id is created when creating a product on console
- * @param[in] device_id:      The device unique ID, eg. MAC address,
- *                            Length should be less than 64 bytes
+ * @param[in] device_id:      The device unique ID
+ *                            Length should be no mora than 16 bytes
  *                            Supported character scopes are:
- *                            - The 26 uppercase English letters: A to Z
+ *                            - The 26 English letters: A to Z or a to z
  *                            - The 10 numbers: 0 to 9
- * @param[out] user_id:     The user id, length: 64 bytes
+ * @param[out] user_id:       The user id, length: 64 bytes
+ * @param[in] id_len          The length of the user id buffer, include the terminal '\0'.
  * @return
  * - = 0: success
  * - < 0: failure, refer to agora_iot_error_e
  */
-int agora_iot_query_user(const char *host_url,  const char *product_key, const char *device_id, char *user_id);
+int agora_iot_query_user(const char *host_url,  const char *product_key, const char *device_id, char *user_id, int id_len);
 
 /**
  * @brief Activate agora RTC license, this function cannot reentrant
@@ -94,13 +98,16 @@ int agora_iot_query_user(const char *host_url,  const char *product_key, const c
  *                        Supported character scopes are:
  *                        - The 26 uppercase English letters: A to Z
  *                        - The 10 numbers: 0 to 9
+ * @param[in] pid         The PID of agora license, it will be ignore on v1.0 version
+ *                        got from agora license managment platform: 
+ *                        - https://console.agora.io/license/usage
  * @param[out] cert     the buffer of keeping the license certificate,
  *                      should be save to file or flash, and YOU HAVE TO FREE IT AFTER.
  * @return = 0: success;
  *         < 0: failure, refer to agora_iot_error_e
  */
 int agora_iot_license_activate(const char *appid, const char *key, const char *secret,
-                              const char *product_key, const char *device_id, char **cert);
+                              const char *product_key, const char *device_id, const char *pid, char **cert);
 
 #ifdef __cplusplus
 }

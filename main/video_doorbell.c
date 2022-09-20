@@ -176,6 +176,8 @@ static SemaphoreHandle_t g_audio_capture_sem  = NULL;
 
 static QueueHandle_t    g_qr_queue;
 
+static uint8_t g_push_type = 0x00;
+
 
 static esp_err_t es7210_write_reg(i2c_bus_handle_t i2c_handle, uint8_t reg_addr, uint8_t data)
 {
@@ -484,7 +486,7 @@ static int send_video_frame(uint8_t *data, uint32_t len)
     ago_frame.is_key_frame      = true;
     ago_frame.video_buffer      = data;
     ago_frame.video_buffer_size = len;
-    rval = agora_iot_push_video_frame(g_handle, &ago_frame);
+    rval = agora_iot_push_video_frame(g_handle, &ago_frame, g_push_type);
     if (rval < 0) {
         ESP_LOGE(TAG, "Failed to push video frame");
         return -1;
@@ -502,7 +504,7 @@ static int send_audio_frame(uint8_t *data, uint32_t len)
     ago_frame.data_type         = AGO_AUDIO_DATA_TYPE_PCM;
     ago_frame.audio_buffer      = data;
     ago_frame.audio_buffer_size = len;
-    rval = agora_iot_push_audio_frame(g_handle, &ago_frame);
+    rval = agora_iot_push_audio_frame(g_handle, &ago_frame, g_push_type);
     if (rval < 0) {
         ESP_LOGE(TAG, "Failed to push audio frame");
         return -1;
@@ -627,10 +629,13 @@ static void iot_cb_call_request(const char *peer_name, const char *attach_msg)
   agora_iot_answer(g_handle);
 }
 
-static void iot_cb_start_push_frame(void)
+static void iot_cb_start_push_frame(uint8_t push_type)
 {
   ESP_LOGI(TAG, "Start push audio/video frames");
   g_app.b_call_session_started = true;
+  
+  // record push type
+  g_push_type |= push_type;
 
 #ifndef CONFIG_AUDIO_ONLY
   xSemaphoreGive(g_video_capture_sem);
@@ -639,10 +644,13 @@ static void iot_cb_start_push_frame(void)
   xSemaphoreGive(g_audio_capture_sem);
 }
 
-static void iot_cb_stop_push_frame(void)
+static void iot_cb_stop_push_frame(uint8_t push_type)
 {
   ESP_LOGI(TAG, "Stop push audio/video frames");
   g_app.b_call_session_started = false;
+
+  // record push type
+  g_push_type &= ~push_type;
 }
 
 static void iot_cb_call_hung_up(const char *peer_name)
@@ -957,7 +965,7 @@ static device_handle_t agora_device_bringup(sys_up_mode_e mode)
   char user_account[64] = { 0 };
   if (SYS_UP_MODE_WAKEUP != mode) {
     // maybe nee to avtiate device if was not wakeup frome low-power mode
-    if (SYS_UP_MODE_RESTORE == mode || 0 != agora_iot_query_user(CONFIG_MASTER_SERVER_URL, product_key, get_device_id(), user_account) ||
+    if (SYS_UP_MODE_RESTORE == mode || 0 != agora_iot_query_user(CONFIG_MASTER_SERVER_URL, product_key, get_device_id(), user_account, AGORA_IOT_CLIENT_ID_MAX_LEN) ||
         0 == strlen(user_account) || 0 != device_get_item_string(dev_state, "license", &license)) {
       // active device if cannot found license info or cannot found bind user info
       if (0 != activate_device(dev_state)) {
