@@ -24,7 +24,7 @@
  */
 
 #include <string.h>
-
+#include <sys/param.h>
 #include "app_config.h"
 #include "agora_iot_api.h"
 #include "agora_iot_call.h"
@@ -74,8 +74,6 @@ static const char *TAG = "Agora";
 #define DEFAULT_PS_MODE WIFI_PS_NONE
 #endif
 
-#define CAMERA_WIDTH (CONFIG_FRAME_WIDTH)
-#define CAMERA_HIGH (CONFIG_FRAME_HIGH)
 
 #define CAM_PIN_PWDN -1 // power down is not used
 #define CAM_PIN_RESET -1 // software reset will be performed
@@ -110,6 +108,14 @@ static const char *TAG = "Agora";
 #define ESP_READ_BUFFER_SIZE 1024
 
 #define DEFAULT_MAX_BITRATE (2000000)
+
+#define CONFIG_CONTENT_LEN   256
+
+
+typedef struct {
+  char ssid[32];
+  char password[64];
+} wifi_info_t;
 
 typedef struct {
   bool b_wifi_connected;
@@ -464,8 +470,8 @@ static void init_camera(void)
 static void *init_jpeg_encoder(int quality, int hfm_core, int hfm_priority, jpeg_subsampling_t subsampling)
 {
   jpeg_enc_info_t jpeg_enc_info   = { 0 };
-  jpeg_enc_info.width             = CAMERA_WIDTH;
-  jpeg_enc_info.height            = CAMERA_HIGH;
+  jpeg_enc_info.width             = CONFIG_FRAME_WIDTH;
+  jpeg_enc_info.height            = CONFIG_FRAME_HIGH;
   jpeg_enc_info.src_type          = JPEG_RAW_TYPE_YCbYCr;
   jpeg_enc_info.subsampling       = subsampling;
   jpeg_enc_info.quality           = quality;
@@ -683,7 +689,7 @@ static void iot_cb_receive_audio_frame(ago_audio_frame_t *frame)
   raw_stream_write(raw_write, (char *)frame->audio_buffer, frame->audio_buffer_size);
 }
 
-
+#ifndef CONFIG_BLUFI_ENABLE
 static void qr_recoginze(void *parameter)
 {
   // Save image width and height, avoid allocate memory repeatly.
@@ -779,7 +785,7 @@ static void qr_recoginze(void *parameter)
 
     if (ret == QUIRC_SUCCESS) {
       //tell
-      if (qd.payload_len > 512) {
+      if (qd.payload_len > CONFIG_CONTENT_LEN) {
         ESP_LOGE(TAG, "qd payload len %d\n", qd.payload_len);
       }
       xQueueSend(g_qr_queue, qd.payload, portMAX_DELAY);
@@ -792,32 +798,35 @@ static void qr_recoginze(void *parameter)
   ESP_LOGI(TAG, "Deconstruct QR-Code recognizer(quirc)");
   vTaskDelete(NULL);
 }
+#endif
 
-static int parse_qrcode_content(device_handle_t dev_state, const char *content)
+static int parse_config_content(device_handle_t dev_state, const char *content, char *ssid, char *pwd)
 {
-  int ret           = -1;
+  int ret     = -1;
 
   cJSON *root = cJSON_Parse(content);
   if (NULL == root) {
     ESP_LOGE(TAG, "cannot parse QRcode: %s\n", content);
-    goto qrcode_parse_err;
+    goto _parse_err;
   }
 
   // get ssid
   cJSON *item = cJSON_GetObjectItemCaseSensitive(root, "s");
-  if (cJSON_GetStringValue(item)) {
-    device_set_item_string(dev_state, "ssid", cJSON_GetStringValue(item));
+  ssid = cJSON_GetStringValue(item); 
+  if (ssid != NULL) {
+    device_set_item_string(dev_state, "ssid", ssid);
   } else {
-    printf("#### cannot found ssid in QRcode !\n");
+    printf("#### cannot found ssid!\n");
   }
   item = NULL;
 
   // get pws
   item = cJSON_GetObjectItemCaseSensitive(root, "p");
-  if (cJSON_GetStringValue(item)) {
-    device_set_item_string(dev_state, "password", cJSON_GetStringValue(item));
+  pwd = cJSON_GetStringValue(item);
+  if (pwd != NULL) {
+    device_set_item_string(dev_state, "password", pwd);
   } else {
-    printf("#### cannot found password in QRcode !\n");
+    printf("#### cannot found password!\n");
   }
   item = NULL;
 
@@ -826,7 +835,7 @@ static int parse_qrcode_content(device_handle_t dev_state, const char *content)
   if (cJSON_GetStringValue(item)) {
     device_set_item_string(dev_state, "product_key", cJSON_GetStringValue(item));
   } else {
-    printf("#### cannot found  product key in QRcode !\n");
+    printf("#### cannot found  product key!\n");
   }
   item = NULL;
 
@@ -835,7 +844,7 @@ static int parse_qrcode_content(device_handle_t dev_state, const char *content)
   if (cJSON_GetStringValue(item)) {
     device_set_item_string(dev_state, "user_id", cJSON_GetStringValue(item));
   } else {
-    printf("#### cannot found user id in QRcode !\n");
+    printf("#### cannot found user id!\n");
   }
   item = NULL;
 
@@ -844,46 +853,18 @@ static int parse_qrcode_content(device_handle_t dev_state, const char *content)
   if (cJSON_GetStringValue(item)) {
     device_set_item_string(dev_state, "device_name", cJSON_GetStringValue(item));
   } else {
-    printf("#### cannot found device_name in QRcode, use the default: %s !\n", get_device_id());
+    printf("#### cannot found device_name, use the default: %s !\n", get_device_id());
     device_set_item_string(dev_state, "device_name", get_device_id());
   }
   item = NULL;
   ret = 0;
 
-qrcode_parse_err:
+_parse_err:
   if (root) {
     cJSON_Delete(root);
   }
+
   return ret;
-}
-
-
-static int agora_network_config(device_handle_t dev_state)
-{
-#define QRCODE_BUF_LEN   512
-  char qrcode_content[QRCODE_BUF_LEN + 1] = { 0 };
-  ESP_LOGI(TAG, "\n\n------------------ Please input QRcode string with JSON type ----------------------\n");
-
-  g_qr_queue = xQueueCreate(2, QRCODE_BUF_LEN);
-  if (NULL == g_qr_queue) {
-    ESP_LOGE(TAG, "create semaphore failed !\n");
-    return -1;
-  }
-
-  // create the task for QR-Code
-  xTaskCreate(qr_recoginze, "qr_recoginze_task", 1024 * 40, NULL, 5, NULL);
-
-  // wait for the QR-Code from the qr_reconginze_task
-  xQueueReceive(g_qr_queue, qrcode_content, portMAX_DELAY);
-
-  // scanf("%512s", qrcode_content);
-  ESP_LOGI(TAG, "qrcode context: %s\n", qrcode_content);
-  ESP_LOGI(TAG, "-------------------- Got string and parse it now ------------------------------------\n");
-
-  // raw_stream_write(raw_write, (char *)pcm_test_data, sizeof(pcm_test_data));
-
-  // parse content
-  return parse_qrcode_content(dev_state, qrcode_content);
 }
 
 static int device_connect_network(char *ssid, char *psw)
@@ -908,6 +889,51 @@ static int device_connect_network(char *ssid, char *psw)
   return 0;
 }
 
+static int agora_network_config(device_handle_t dev_state)
+{
+  char config_buff[CONFIG_CONTENT_LEN + 1] = { 0 };
+  char ssid[32] = { 0 };
+  char pwd[64]  = { 0 };
+
+#ifdef CONFIG_BLUFI_ENABLE
+  // setup wifi and Wait until WiFi is connected
+extern void setup_wifi_with_block(char *cfg);
+  setup_wifi_with_block(config_buff);
+
+#if LOWER_POWER_MODE == CONFIG_ENABLE_LIGHT_SLEEP
+  esp_wifi_set_ps(DEFAULT_PS_MODE);
+#else
+  esp_wifi_set_ps(WIFI_PS_NONE);
+#endif
+
+  return parse_config_content(dev_state, config_buff, ssid, pwd);
+#else // CONFIG_BLUFI_ENABLE 
+  ESP_LOGI(TAG, "\n\n------------------ Please input QRcode string with JSON type ----------------------\n");
+
+  g_qr_queue = xQueueCreate(2, CONFIG_CONTENT_LEN);
+  if (NULL == g_qr_queue) {
+    ESP_LOGE(TAG, "create semaphore failed !\n");
+    return -1;
+  }
+
+  // create the task for QR-Code
+  xTaskCreate(qr_recoginze, "qr_recoginze_task", 1024 * 40, NULL, 5, NULL);
+
+  // wait for the QR-Code from the qr_reconginze_task
+  xQueueReceive(g_qr_queue, config_buff, portMAX_DELAY);
+
+  ESP_LOGI(TAG, "qrcode context: %s\n", config_buff);
+  ESP_LOGI(TAG, "-------------------- Got string and parse it now ------------------------------------\n");
+
+  // parse content
+  if (parse_config_content(dev_state, config_buff, ssid, pwd) == 0) {
+    setup_wifi();
+    return device_connect_network(ssid, pwd);
+  } else
+    return -1;
+#endif // CONFIG_BLUFI_ENABLE
+}
+
 static device_handle_t agora_device_bringup(sys_up_mode_e mode)
 {
   char *ssid    = NULL;
@@ -918,7 +944,7 @@ static device_handle_t agora_device_bringup(sys_up_mode_e mode)
   // 1. load device state config
   device_handle_t dev_state = load_devic_state();
 
-  // 2. do network config process
+  // 2. network config and connect
   if (NULL == dev_state) {
     if (SYS_UP_MODE_WAKEUP == mode) {
       ESP_LOGE(TAG, "device state config must be here is that system was wakeup from low-power mode");
@@ -938,22 +964,24 @@ static device_handle_t agora_device_bringup(sys_up_mode_e mode)
     ESP_LOGI(TAG, "agora_network_config ok\n"); 
   } else {
     ESP_LOGI(TAG, "device load ok\n");
-  }
 
-  // 3. connect network (TODO: maybe need not do it on some system)
-  if (0 != device_get_item_string(dev_state, "ssid", &ssid) ||
-      0 != device_get_item_string(dev_state, "password", &psw)) {
-    ESP_LOGE(TAG, "cannot found ssid and password !\n");
-    goto dev_bringup_err;
-  }
-  if (0 != device_connect_network(ssid, psw)) {
-    ESP_LOGE(TAG, "cannot connect network !\n");
-    goto dev_bringup_err;
-  }
+    setup_wifi();
 
-  // Wait until WiFi is connected
-  while (!g_app.b_wifi_connected) {
-    vTaskDelay(10 / portTICK_PERIOD_MS);
+    // 3. connect network (TODO: maybe need not do it on some system)
+    if (0 != device_get_item_string(dev_state, "ssid", &ssid) ||
+        0 != device_get_item_string(dev_state, "password", &psw)) {
+      ESP_LOGE(TAG, "cannot found ssid and password !\n");
+      goto dev_bringup_err;
+    }
+    if (0 != device_connect_network(ssid, psw)) {
+      ESP_LOGE(TAG, "cannot connect network !\n");
+      goto dev_bringup_err;
+    }
+
+    // Wait until WiFi is connected
+    while (!g_app.b_wifi_connected) {
+      vTaskDelay(10 / portTICK_PERIOD_MS);
+    }
   }
 
   if (0 != device_get_item_string(dev_state, "product_key", &product_key)) {
@@ -1106,7 +1134,7 @@ int app_main(void)
                                         .light_sleep_enable = true };
   ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
 #endif
-  setup_wifi();
+
   setup_audio();
 
   init_camera();

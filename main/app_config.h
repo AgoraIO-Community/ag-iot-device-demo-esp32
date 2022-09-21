@@ -17,7 +17,6 @@
 #define CONFIG_PRODUCT_KEY "EJIJ********5lI4"
 
 #define CONFIG_USER_ID "68753*******3440" // Please replace with your own user ID
-#define CONFIG_DEVICE_ID "mydoorbell" // Please replace with your own device ID
 
 // Device cert file size max
 #define CERT_BUF_SIZE_MAX (1024 * 2)
@@ -47,9 +46,11 @@ rqXRfboQnoZsG4q5WTP468SQvvG5\r\n\
 
 
 // #define CONFIG_ENABLE_LOW_POWER_MODE
-//#define CONFIG_AUDIO_SAMPLE_RATE_8K
+#define CONFIG_AUDIO_SAMPLE_RATE_8K
 #define CONFIG_SEND_PCM_DATA
 #define CONFIG_ENABLE_RUN_TIME_STATS
+
+#define CONFIG_BLUFI_ENABLE
 
 #define NVS_STORAGE
 // #define CONFIG_SDCARD
