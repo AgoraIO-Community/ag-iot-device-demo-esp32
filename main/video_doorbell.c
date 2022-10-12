@@ -1062,6 +1062,7 @@ static agora_iot_handle_t connect_agora_iot_service(device_handle_t dev_state)
     .certificate = license,
     .enable_recv_audio = true,
     .enable_recv_video = false,
+    .area_code         = AGO_AREA_CODE_GLOB,
     .rtc_cb = {
       .cb_start_push_frame    = iot_cb_start_push_frame,
       .cb_stop_push_frame     = iot_cb_stop_push_frame,
