@@ -35,7 +35,6 @@
 #include "esp_blufi_api.h"
 #include "esp_blufi.h"
 
-#include "app_config.h"
 #include "blufi_info.h"
 
 

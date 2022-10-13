@@ -8,4 +8,4 @@ set(blufi_src
 
 idf_component_register(SRCS ${blufi_src}
                     INCLUDE_DIRS "."
-										PRIV_REQUIRES nvs_flash)
+										PRIV_REQUIRES nvs_flash bt)
