@@ -64,8 +64,6 @@ static uint8_t gl_sta_ssid[32];
 static int gl_sta_ssid_len;
 
 static bool b_wifi_connected = false;
-static bool b_customer_data_recved = false;
-static uint8_t g_ble_cfg_ctx[256];
 
 static void ip_event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data)
@@ -388,8 +386,6 @@ static void _event_callback(esp_blufi_cb_event_t event, esp_blufi_cb_param_t *pa
     case ESP_BLUFI_EVENT_RECV_CUSTOM_DATA:
         BLUFI_INFO("Recv Custom Data %d\n", param->custom_data.data_len);
         esp_log_buffer_hex("Custom Data", param->custom_data.data, param->custom_data.data_len);
-        memcpy(g_ble_cfg_ctx, param->custom_data.data, param->custom_data.data_len);
-        b_customer_data_recved = true;
         break;
 	case ESP_BLUFI_EVENT_RECV_USERNAME:
         /* Not handle currently */
@@ -415,7 +411,7 @@ static void _event_callback(esp_blufi_cb_event_t event, esp_blufi_cb_param_t *pa
 }
 
 
-void setup_wifi_with_block(char *cfg)
+void setup_wifi_with_block(void)
 {
   /* init WIFI，with default params */
   initialise_wifi();
@@ -447,18 +443,12 @@ void setup_wifi_with_block(char *cfg)
   BLUFI_INFO("BLUFI VERSION %04x\n", esp_blufi_get_version());
 
   // Wait until WiFi is connected
-  while (!b_wifi_connected || !b_customer_data_recved) {
+  while (!b_wifi_connected) {
     vTaskDelay(10 / portTICK_PERIOD_MS);
   }
 
-  memcpy(cfg, g_ble_cfg_ctx, strlen((char *)g_ble_cfg_ctx));
-
-  /* reset */
-  b_wifi_connected       = false;
-  b_customer_data_recved = false;
-
-  // disable blufi
   esp_blufi_host_and_cb_deinit();
+  // disable blufi
   esp_bt_controller_disable();
   esp_bt_controller_deinit();
 }
