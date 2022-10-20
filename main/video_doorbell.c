@@ -453,9 +453,6 @@ static void setup_audio(void)
 
   es7210_mic_select(ES7210_INPUT_MIC1 | ES7210_INPUT_MIC2 | ES7210_INPUT_MIC3 | ES7210_INPUT_MIC4);
   set_es7210_tdm_mode();
-
-  recorder_pipeline_open();
-  player_pipeline_open();
 }
 
 static void init_camera(void)
@@ -573,11 +570,14 @@ static void audio_capture_and_send_task(void *threadid)
     return;
   }
 
-  audio_pipeline_run(recorder);
-  audio_pipeline_run(player);
-
   while (1) {
+    recorder_pipeline_open();
+    player_pipeline_open();
+
     xSemaphoreTake(g_audio_capture_sem, portMAX_DELAY);
+
+    audio_pipeline_run(recorder);
+    audio_pipeline_run(player);
 
     while (g_app.b_call_session_started) {
       ret = raw_stream_read(raw_read, (char *)pcm_buf, read_len);
@@ -586,10 +586,16 @@ static void audio_capture_and_send_task(void *threadid)
       }
       send_audio_frame(pcm_buf, DEFAULT_PCM_CAPTURE_LEN);
     }
-  }
 
-  audio_pipeline_terminate(recorder);
-  audio_pipeline_terminate(player);
+    //deinit
+    audio_pipeline_stop(recorder);
+    audio_pipeline_wait_for_stop(recorder);
+    audio_pipeline_terminate(recorder);
+
+    audio_pipeline_stop(player);
+    audio_pipeline_wait_for_stop(player);
+    audio_pipeline_terminate(player);
+  }
 
   free(pcm_buf);
   vTaskDelete(NULL);
