@@ -44,8 +44,6 @@ o/ufQJVtMVT8QtPHRh8jrdkPSHCa2XV4cdFyQzR1bldZwgJcJmApzyMZFo6IQ6XU\r\n\
 rqXRfboQnoZsG4q5WTP468SQvvG5\r\n\
 -----END CERTIFICATE-----\r\n"
 
-
-// #define CONFIG_ENABLE_LOW_POWER_MODE
 #define CONFIG_AUDIO_SAMPLE_RATE_8K
 #define CONFIG_SEND_PCM_DATA
 #define CONFIG_ENABLE_RUN_TIME_STATS
@@ -70,3 +68,16 @@ rqXRfboQnoZsG4q5WTP468SQvvG5\r\n\
 #define CONFIG_FRAME_WIDTH 640
 #define CONFIG_FRAME_HIGH 480
 #endif
+
+// Device Firmware version
+#define CONFIG_FM_WIFI_VER "1.0.0"
+#define CONFIG_FM_MCU_VER "1.0.0"
+
+// 0 for no sleep
+#define CONFIG_NO_SLEEP             0
+// 1 for light sleep
+#define CONFIG_ENABLE_LIGHT_SLEEP   1
+// 2 for deep sleep
+#define CONFIG_ENABLE_DEEP_SLEEP    2
+
+#define LOWER_POWER_MODE   (CONFIG_ENABLE_DEEP_SLEEP)
