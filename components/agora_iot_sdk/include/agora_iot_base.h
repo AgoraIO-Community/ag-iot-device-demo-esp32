@@ -34,19 +34,19 @@ typedef void* agora_iot_handle_t;
 // Error Code define
 typedef enum {
   /* No Error */
-  ERR_SUCCESS                                   = 0,
+  AGORA_ERR_SUCCESS                                   = 0,
 
   /* General error (no specified reason). */
-  ERR_FAILED                                    = -1,
+  AGORA_ERR_FAILED                                    = -1,
 
   /* Invalid argument called */
-  ERR_INVALID_ARGUMENT                          = -2,
+  AGORA_ERR_INVALID_ARGUMENT                          = -2,
 
   /* The required component is not enabled */
-  ERR_COMPONENT_NOT_ENABLED                     = -3,
+  AGORA_ERR_COMPONENT_NOT_ENABLED                     = -3,
 
   /* The feature is disabled */
-  ERR_FEATURE_DISABLED                          = -4
+  AGORA_ERR_FEATURE_DISABLED                          = -4
 } agora_iot_error_e;
 
 #ifdef __cplusplus

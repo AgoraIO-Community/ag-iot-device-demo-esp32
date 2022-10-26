@@ -1039,11 +1039,13 @@ static agora_iot_handle_t connect_agora_iot_service(device_handle_t dev_state)
   char *license = NULL;
   char *product_key = NULL;
   char *client_id = NULL;
+  char *user_id = NULL;
 
   if (0 != device_get_item_string(dev_state, "dev_crt", &dev_crt) ||
       0 != device_get_item_string(dev_state, "dev_key", &dev_key) ||
       0 != device_get_item_string(dev_state, "domain", &domain)   ||
-      0 != device_get_item_string(dev_state, "client_id", &client_id)) {
+      0 != device_get_item_string(dev_state, "client_id", &client_id) ||
+      0 != device_get_item_string(dev_state, "bind_user", &user_id)) {
     ESP_LOGE(TAG, "cannot found dev_crt or dev_key or domain in device state items\n");
     goto agora_iot_err;
   }
@@ -1066,6 +1068,7 @@ static agora_iot_handle_t connect_agora_iot_service(device_handle_t dev_state)
     .root_ca     = CONFIG_AWS_ROOT_CA,
     .client_crt  = dev_crt,
     .client_key  = dev_key,
+    .user_id     = user_id,
     .enable_rtc  = true,
     .certificate = license,
     .enable_recv_audio = true,
@@ -1082,6 +1085,7 @@ static agora_iot_handle_t connect_agora_iot_service(device_handle_t dev_state)
   #endif
     },
     .disable_rtc_log      = true,
+    .log_level            = AGORA_LOG_INFO,
     .max_possible_bitrate = DEFAULT_MAX_BITRATE,
     .enable_audio_config  = true,
     .audio_config = {
@@ -1097,6 +1101,7 @@ static agora_iot_handle_t connect_agora_iot_service(device_handle_t dev_state)
     },
 
     .slave_server_url = CONFIG_SLAVE_SERVER_URL,
+    .call_mode        = CALL_MODE_MUTLI,
     .call_cb = {
       .cb_call_request       = iot_cb_call_request,
       .cb_call_answered      = iot_cb_call_answered,

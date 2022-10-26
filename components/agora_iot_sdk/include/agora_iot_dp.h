@@ -33,11 +33,11 @@ extern "C" {
 
 typedef enum {
   /* No Error */
-  ERR_AG_DP_SUCCESS           = ERR_SUCCESS,
+  ERR_AG_DP_SUCCESS           = AGORA_ERR_SUCCESS,
   /* General error (no specified reason). */
-  ERR_AG_DP_FAILED            = ERR_FAILED,
+  ERR_AG_DP_FAILED            = AGORA_ERR_FAILED,
   /* Invalid parameter called */
-  ERR_AG_DP_INVALID_ARGUMENT  = ERR_INVALID_ARGUMENT,
+  ERR_AG_DP_INVALID_ARGUMENT  = AGORA_ERR_INVALID_ARGUMENT,
 } agora_iot_dp_result_e;
 
 #ifndef __AGORA_IOT_DP_DEFS_H__

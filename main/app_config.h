@@ -1,9 +1,11 @@
 #pragma once
 
-#define CONFIG_AGORA_APP_ID "4b31f**************3037" // Please replace with your own APP ID
+#define CONFIG_AGORA_APP_ID "4b31fcxxxxxxxxxxxxxxxxxxxx3037" // Please replace with your own APP ID
 
-#define CONFIG_CUSTOMER_KEY "8620f**************7363"
-#define CONFIG_CUSTOMER_SECRET "492c1***************e802"
+#define CONFIG_CUSTOMER_KEY "8620fxxxxxxxxxxxxx07363"
+#define CONFIG_CUSTOMER_SECRET "492c1xxxxxxxxxxxxxxxxxxxx7e802"
+
+#define CONFIG_LICENSE_PID "00F8D46xxxxxxxxxxxxxxx22646"
 
 // Agora Master Server URL
 #define CONFIG_MASTER_SERVER_URL "https://app.agoralink-iot-cn.sd-rtn.com"
@@ -11,12 +13,10 @@
 // Agora Slave Server URL
 #define CONFIG_SLAVE_SERVER_URL "https://api.agora.io/agoralink/cn/api"
 
-#define CONFIG_LICENSE_PID "00F8D46F5xxxxx22646"
-
 // Found product key form device manager platform
-#define CONFIG_PRODUCT_KEY "EJIJ********5lI4"
+#define CONFIG_PRODUCT_KEY "EJIJExxxxxx5lI4"
 
-#define CONFIG_USER_ID "68753*******3440" // Please replace with your own user ID
+#define CONFIG_USER_ID "73177xxxxxxx3024"// Please replace with your own user ID
 
 // Device cert file size max
 #define CERT_BUF_SIZE_MAX (1024 * 2)

@@ -284,9 +284,9 @@ typedef struct agora_iot_ota_callback {
  */
 typedef enum {
   /** no error */
-  ERR_AGORA_RTM_OK = ERR_SUCCESS,
+  ERR_AGORA_RTM_OK = AGORA_ERR_SUCCESS,
   /** general error */
-  ERR_AGORA_RTM_FAILED = ERR_FAILED,
+  ERR_AGORA_RTM_FAILED = AGORA_ERR_FAILED,
 } agora_rtm_err_e;
 
 typedef struct agora_iot_rtm_callback {
@@ -351,6 +351,21 @@ typedef struct agora_iot_file_info {
   int size;
 } agora_iot_file_info_t;
 
+/**
+ * The definition of log level enum
+ */
+typedef enum {
+  AGORA_LOG_DEFAULT = 0,   // the same as AG_LOG_NOTICE
+  AGORA_LOG_EMERG,         // system is unusable
+  AGORA_LOG_ALERT,         // action must be taken immediately
+  AGORA_LOG_CRIT,          // critical conditions
+  AGORA_LOG_ERROR,         // error conditions
+  AGORA_LOG_WARNING,       // warning conditions
+  AGORA_LOG_NOTICE,        // normal but significant condition, default level
+  AGORA_LOG_INFO,          // informational
+  AGORA_LOG_DEBUG,         // debug-level messages
+} agora_iot_log_level_e;
+
 typedef struct agora_iot_config {
   /* the product and device's informations */
   char *app_id;
@@ -373,6 +388,7 @@ typedef struct agora_iot_config {
   /* Extensional RTC config */
   bool disable_rtc_log; // disable low level rtc log
   char *p_log_dir;      // log save path, if it's enabled
+  agora_iot_log_level_e log_level;  // log level, if it's enabled
   uint32_t max_possible_bitrate;
   bool enable_audio_config;
   agora_iot_audio_config_t audio_config;
@@ -380,6 +396,7 @@ typedef struct agora_iot_config {
 
   /* IoT Call Server */
   char *slave_server_url;
+  agora_call_mode_e call_mode;
   agora_iot_call_callback_t call_cb;
 
   /* IoT OTA Service */
@@ -405,11 +422,28 @@ typedef struct agora_iot_config {
 agora_iot_handle_t agora_iot_init(const agora_iot_config_t *cfg);
 
 /**
- * @brief Destory the Agora IoT object and free some resources.
+ * @brief Destroy the Agora IoT object and free some resources.
  *
  * @param[in] handle:         The reference when initialized
  */
 void agora_iot_deinit(agora_iot_handle_t handle);
+
+/**
+ * @brief Set RTC log file configuration, will not work if disable_rtc_log is true.
+ *        Need to set if the default configuration cannot meet the requirements.
+ *
+ * @param[in] handle:         The reference when initialized
+ * @param[in] size_per_file:  The size (bytes) of each log file.
+ *                            The value range is [0, 10*1024*1024(10MB)], default 1*1024*1024(1MB).
+ *                            0 means set log off
+ * @param[in] max_file_count: The maximum number of log file numbers.
+ *                            The value range is [0, 100], default 10.
+ *                            0 means set log off
+ * @return
+ * - = 0: success
+ * - < 0: failure
+ */
+int agora_iot_logfile_config(agora_iot_handle_t handle, int size_per_file, int max_file_count);
 
 /**
  * @brief Send video frame to peer.
@@ -501,13 +535,17 @@ int agora_iot_push_alarm_message(agora_iot_handle_t handle, unsigned long long b
  * @param[in] handle          The handle of the SDK, need to initialize firstly.
  * @param[in] begin_time      The timestamp which start to record, unit: ms.
  * @param[in] end_time        The prospecting timestamp which stop to record, unit: ms.
+ * @param[in] audio_type      The codec type of audio data which must matched the audio frame of agora_iot_push_audio_frame(),
+ *                            otherwise pushing audio frame will failure.
+ * @param[in] video_type      The codec type of video data which must matched the video frame of agora_iot_push_audio_frame(),
+ *                            otherwise pushing video frame will failure.
  * @param[out] record_id      The id of the video record.
  * @return
  * - = 0: Success
  * - < 0: Failure
  */
 int agora_iot_cloud_record_start(agora_iot_handle_t handle, unsigned long long begin_time, unsigned long long end_time,
-                                  unsigned long long *record_id);
+                                ago_av_data_type_e audio_type, ago_av_data_type_e video_type, unsigned long long *record_id);
 
 /**
  * @brief Stop to push the video and audio frame to OSS.

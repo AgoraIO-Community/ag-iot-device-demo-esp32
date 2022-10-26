@@ -33,11 +33,11 @@ extern "C" {
 
 typedef enum {
   /* No Error */
-  ERR_AG_CALL_SUCCESS            = ERR_SUCCESS,
+  ERR_AG_CALL_SUCCESS            = AGORA_ERR_SUCCESS,
   /* General error (no specified reason). */
-  ERR_AG_CALL_FAILED             = ERR_FAILED,
+  ERR_AG_CALL_FAILED             = AGORA_ERR_FAILED,
   /* Invalid parameter called */
-  ERR_AG_CALL_INVALID_ARGUMENT   = ERR_INVALID_ARGUMENT,
+  ERR_AG_CALL_INVALID_ARGUMENT   = AGORA_ERR_INVALID_ARGUMENT,
 
   /* Peer already in call error */
   ERR_AG_CALL_PEER_BUSY          = -100001,
@@ -75,6 +75,15 @@ typedef enum {
   /* Unexpectedly server error */
   ERR_AG_SERVER_UNEXPECTEDLY_ERROR = -999999,
 } agora_iot_call_result_e;
+
+/**
+ * @brief The mode of calling
+ *
+ */
+typedef enum {
+  CALL_MODE_SINGLE    = 1,  // 1 device vs 1 user
+  CALL_MODE_MUTLI     = 2,  // 1 device vs mutli users
+} agora_call_mode_e;
 
 typedef struct agora_iot_call_callback {
   /******************** Event Callback related to Call *******************/
