@@ -59,6 +59,7 @@
 #include "convert.h"
 #include "esp_sleep.h"
 #include "driver/rtc_io.h"
+#include "audio_thread.h"
 
 #include "cJSON.h"
 
@@ -180,7 +181,9 @@ static audio_element_handle_t raw_read, raw_write, element_algo;
 static audio_pipeline_handle_t recorder, player;
 // static ringbuf_handle_t ringbuf_r, ringbuf_w;
 static SemaphoreHandle_t g_video_capture_sem  = NULL;
+static audio_thread_t *g_video_thread;
 static SemaphoreHandle_t g_audio_capture_sem  = NULL;
+static audio_thread_t *g_audio_thread;
 
 static QueueHandle_t    g_qr_queue;
 
@@ -605,7 +608,7 @@ static void audio_capture_and_send_task(void *threadid)
 
 static void create_capture_task(void)
 {
-  int rval;
+  esp_err_t rval = ESP_FAIL;
 
 #ifndef CONFIG_AUDIO_ONLY
   g_video_capture_sem = xSemaphoreCreateBinary();
@@ -613,8 +616,8 @@ static void create_capture_task(void)
     ESP_LOGE(TAG, "Unable to create video capture semaphore!");
     return;
   }
-  rval = xTaskCreatePinnedToCore(video_capture_and_send_task, "video_task", 3 * 1024, NULL, PRIO_TASK_FETCH, NULL, 1);
-  if (rval != pdTRUE) {
+  rval = audio_thread_create(g_video_thread, "video_task", video_capture_and_send_task, NULL, 5 * 1024, PRIO_TASK_FETCH, true, 1);
+  if (rval != ESP_OK) {
     ESP_LOGE(TAG, "Unable to create video capture thread!");
     return;
   }
@@ -625,8 +628,8 @@ static void create_capture_task(void)
     ESP_LOGE(TAG, "Unable to create audio capture semaphore!");
     return;
   }
-  rval = xTaskCreatePinnedToCore(audio_capture_and_send_task, "audio_task", 3 * 1024, NULL, PRIO_TASK_FETCH, NULL, 1);
-  if (rval != pdTRUE) {
+  rval = audio_thread_create(g_audio_thread, "audio_task", audio_capture_and_send_task, NULL, 5 * 1024, PRIO_TASK_FETCH, true, 1);
+  if (rval != ESP_OK) {
     ESP_LOGE(TAG, "Unable to create audio capture thread!");
     return;
   }
