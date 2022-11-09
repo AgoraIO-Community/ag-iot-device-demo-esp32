@@ -101,7 +101,7 @@ static const char *TAG = "Agora";
 #define I2S_CHANNELS 1
 #define I2S_BITS 16
 
-#define ESP_READ_BUFFER_SIZE 1024
+#define ESP_READ_BUFFER_SIZE 320
 
 #define DEFAULT_MAX_BITRATE (2000000)
 
@@ -424,7 +424,7 @@ static esp_err_t recorder_pipeline_open(void)
 #endif
   i2s_cfg.task_core     = 1;
   i2s_cfg.i2s_config.channel_format  = I2S_CHANNEL_FMT_ONLY_LEFT;
-  i2s_cfg.i2s_config.sample_rate     = CONFIG_PCM_DATA_LEN;
+  i2s_cfg.i2s_config.sample_rate     = CONFIG_PCM_SAMPLE_RATE;
   i2s_cfg.i2s_config.mode            = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_RX);
 #ifdef CONFIG_ESP32_S3_KORVO2_V3_BOARD
   i2s_cfg.i2s_config.bits_per_sample = 32;
@@ -448,7 +448,7 @@ static esp_err_t recorder_pipeline_open(void)
   algo_config.aec_low_cost = true;
 
   element_algo = algo_stream_init(&algo_config);
-  audio_element_set_music_info(element_algo, CONFIG_PCM_DATA_LEN, 1, I2S_BITS);
+  audio_element_set_music_info(element_algo, CONFIG_PCM_SAMPLE_RATE, 1, I2S_BITS);
 
   audio_pipeline_register(recorder, i2s_stream_reader, "i2s");
   audio_pipeline_register(recorder, element_algo, "algo");
@@ -485,7 +485,7 @@ static esp_err_t player_pipeline_open()
   i2s_cfg.uninstall_drv              = false;
   i2s_cfg.i2s_config.channel_format  = I2S_CHANNEL_FMT_ONLY_LEFT;
   i2s_cfg.i2s_config.mode            = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_RX);
-  i2s_cfg.i2s_config.sample_rate     = CONFIG_PCM_DATA_LEN;
+  i2s_cfg.i2s_config.sample_rate     = CONFIG_PCM_SAMPLE_RATE;
 #ifdef CONFIG_ESP32_S3_KORVO2_V3_BOARD
   i2s_cfg.i2s_config.bits_per_sample = 32;
   i2s_cfg.need_expand                = true;
@@ -625,7 +625,7 @@ static void video_capture_and_send_task(void *args)
 
 static void audio_capture_and_send_task(void *threadid)
 {
-  int read_len = CONFIG_PCM_DATA_LEN;
+  int read_len = CONFIG_PCM_SAMPLE_RATE;
   int ret;
 
   uint8_t *pcm_buf = heap_caps_malloc(read_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -648,7 +648,7 @@ static void audio_capture_and_send_task(void *threadid)
       if (ret != read_len) {
         ESP_LOGW(TAG, "write error, expect %d, but only %d", read_len, ret);
       }
-      send_audio_frame(pcm_buf, CONFIG_PCM_DATA_LEN);
+      send_audio_frame(pcm_buf, CONFIG_PCM_SAMPLE_RATE);
     }
 
     //deinit
