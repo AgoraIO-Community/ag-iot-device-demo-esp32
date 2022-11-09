@@ -330,12 +330,8 @@ static esp_err_t input_key_service_cb(periph_service_handle_t handle, periph_ser
   return ESP_OK;
 }
 
-static void start_key_service(void)
+static void start_key_service(esp_periph_set_handle_t set)
 {
-  ESP_LOGI(TAG, "Initialize peripherals");
-  esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
-  esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
-
   ESP_LOGI(TAG, "Initialize Button peripheral with board init");
   audio_board_key_init(set);
 
@@ -515,6 +511,7 @@ static void setup_audio(void)
   set_es7210_tdm_mode();
 }
 
+#ifndef CONFIG_AUDIO_ONLY
 static void init_camera(void)
 {
   // initialize the camera
@@ -552,24 +549,6 @@ static int send_video_frame(uint8_t *data, uint32_t len)
     rval = agora_iot_push_video_frame(g_handle, &ago_frame, g_push_type);
     if (rval < 0) {
         ESP_LOGE(TAG, "Failed to push video frame");
-        return -1;
-    }
-
-    return 0;
-}
-
-static int send_audio_frame(uint8_t *data, uint32_t len)
-{
-    int rval = -1;
-
-    // API: send audio data
-    ago_audio_frame_t ago_frame = { 0 };
-    ago_frame.data_type         = AGO_AUDIO_DATA_TYPE_PCM;
-    ago_frame.audio_buffer      = data;
-    ago_frame.audio_buffer_size = len;
-    rval = agora_iot_push_audio_frame(g_handle, &ago_frame, g_push_type);
-    if (rval < 0) {
-        ESP_LOGE(TAG, "Failed to push audio frame");
         return -1;
     }
 
@@ -621,6 +600,25 @@ static void video_capture_and_send_task(void *args)
   esp_timer_delete(fps_timer);
 #endif
   vTaskDelete(NULL);
+}
+#endif
+
+static int send_audio_frame(uint8_t *data, uint32_t len)
+{
+    int rval = -1;
+
+    // API: send audio data
+    ago_audio_frame_t ago_frame = { 0 };
+    ago_frame.data_type         = AGO_AUDIO_DATA_TYPE_PCM;
+    ago_frame.audio_buffer      = data;
+    ago_frame.audio_buffer_size = len;
+    rval = agora_iot_push_audio_frame(g_handle, &ago_frame, g_push_type);
+    if (rval < 0) {
+        ESP_LOGE(TAG, "Failed to push audio frame");
+        return -1;
+    }
+
+    return 0;
 }
 
 static void audio_capture_and_send_task(void *threadid)
@@ -1276,8 +1274,14 @@ int app_main(void)
     handle_wakeup_cause();
 #endif
 
+  // Initialize peripherals management
+  ESP_LOGI(TAG, "Initialize peripherals");
+  esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
+  esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
+
   setup_audio();
 
+#ifndef CONFIG_AUDIO_ONLY
   init_camera();
 
   jpg_encoder = init_jpeg_encoder(40, 0, 20, JPEG_SUB_SAMPLE_YUV422);
@@ -1285,20 +1289,18 @@ int app_main(void)
     ESP_LOGE(TAG, "Failed to initialize jpeg encoder!");
     goto EXIT;
   }
+#endif
 
   create_capture_task();
 
 #ifdef CONFIG_SDCARD
     ESP_LOGI(TAG, "[1.0] Mount sdcard");
-    // Initialize peripherals management
-    esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
-    esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
     // Initialize SD Card peripheral
     audio_board_sdcard_init(set, SD_MODE_1_LINE);
 #endif
 
   // Monitor the key event
-  start_key_service();
+  start_key_service(set);
 
   g_app.up_mode = SYS_UP_MODE_POWERON;
 
