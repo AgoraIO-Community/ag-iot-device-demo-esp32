@@ -625,7 +625,7 @@ static void video_capture_and_send_task(void *args)
 
 static void audio_capture_and_send_task(void *threadid)
 {
-  int read_len = CONFIG_PCM_SAMPLE_RATE;
+  int read_len = CONFIG_PCM_DATA_LEN;
   int ret;
 
   uint8_t *pcm_buf = heap_caps_malloc(read_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -648,7 +648,7 @@ static void audio_capture_and_send_task(void *threadid)
       if (ret != read_len) {
         ESP_LOGW(TAG, "write error, expect %d, but only %d", read_len, ret);
       }
-      send_audio_frame(pcm_buf, CONFIG_PCM_SAMPLE_RATE);
+      send_audio_frame(pcm_buf, CONFIG_PCM_DATA_LEN);
     }
 
     //deinit
