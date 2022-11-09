@@ -98,13 +98,6 @@ static const char *TAG = "Agora";
 
 #define PRIO_TASK_FETCH (21)
 
-#define DEFAULT_PCM_CAPTURE_LEN (2048)
-
-#ifdef CONFIG_AUDIO_SAMPLE_RATE_8K
-#define I2S_SAMPLE_RATE 8000
-#else
-#define I2S_SAMPLE_RATE 16000
-#endif
 #define I2S_CHANNELS 1
 #define I2S_BITS 16
 
@@ -114,17 +107,18 @@ static const char *TAG = "Agora";
 
 #define CONFIG_CONTENT_LEN   256
 
-
-typedef struct {
-  char ssid[32];
-  char password[64];
-} wifi_info_t;
+#define BASE_VIDEO_FPS 10
 
 typedef struct {
   bool b_wifi_connected;
   bool b_call_session_started;
   bool b_exit;
   sys_up_mode_e up_mode;
+
+  uint32_t total_target_send_bps;
+  uint32_t video_send_target_video_frame_rate;
+  uint32_t video_latest_2_second_send_bps;
+  uint8_t  video_capture_fps;
 } app_t;
 
 static app_t g_app = {
@@ -132,6 +126,7 @@ static app_t g_app = {
     .b_wifi_connected       = false,
     .b_exit                 = false,
     .up_mode                = SYS_UP_MODE_POWERON,
+    .video_capture_fps      = BASE_VIDEO_FPS, 
 };
 
 static camera_config_t camera_config = {
@@ -179,16 +174,75 @@ static esp_timer_handle_t fps_timer = NULL;
 static void *jpg_encoder;
 static audio_element_handle_t raw_read, raw_write, element_algo;
 static audio_pipeline_handle_t recorder, player;
-// static ringbuf_handle_t ringbuf_r, ringbuf_w;
+
 static SemaphoreHandle_t g_video_capture_sem  = NULL;
 static audio_thread_t *g_video_thread;
+
 static SemaphoreHandle_t g_audio_capture_sem  = NULL;
 static audio_thread_t *g_audio_thread;
 
+#ifndef CONFIG_BLUFI_ENABLE
 static QueueHandle_t    g_qr_queue;
+#endif
 
 static uint8_t g_push_type = 0x00;
 
+static void __calc_latest_2_sec_video_data_bps(uint32_t video_data_len)
+{
+    static int64_t last_time = 0;
+    static uint32_t total_bytes_len = 0;
+    int64_t        now;
+
+    //init last time
+    if (0 == last_time) {
+        last_time = esp_timer_get_time();
+    }
+
+    total_bytes_len += video_data_len;
+    now              = esp_timer_get_time();
+
+    // ESP_LOGI(TAG, "last_time = %lld, total_bytes_len = %u, now = %lld, video_data_len = %u", last_time, total_bytes_len, now, video_data_len);
+    // //uint32_t wrap around
+    // if (now < last_time) {
+    //     total_bytes_len = 0;
+    //     last_time       = now;
+    //     return;
+    // }
+    int32_t diff = (now - last_time) / 1000;
+    if (diff >= 2000) {
+        g_app.video_latest_2_second_send_bps = (total_bytes_len << 13) / diff;
+        total_bytes_len                      = 0;
+        last_time                            = now;
+        // ESP_LOGI(TAG, "video_latest_2_second_send_bps = %u", g_app.video_latest_2_second_send_bps);
+    }
+}
+
+#define DIV_ROUND(divident, divider)    (((divident) + ((divider) >> 1)) / (divider))
+static uint32_t __is_send_bps_adjust_need_skip_this_frame(void)
+{
+    static int32_t val = BASE_VIDEO_FPS;
+    int32_t skip = 1;
+
+    if (g_app.total_target_send_bps >= g_app.video_latest_2_second_send_bps) {
+        g_app.video_send_target_video_frame_rate = g_app.video_capture_fps;
+        // ESP_LOGI(TAG, "bwe enough, donnot need skip frame[%u, %u], g_app.video_capture_fps %u, val %u",
+                // g_app.total_target_send_bps, g_app.video_latest_2_second_send_bps, g_app.video_capture_fps, val);
+        return 0;
+    }
+
+    g_app.video_send_target_video_frame_rate = DIV_ROUND((g_app.total_target_send_bps * g_app.video_capture_fps), g_app.video_latest_2_second_send_bps);
+    if (val >= g_app.video_capture_fps) {
+        skip = 0;
+        val -= g_app.video_capture_fps;
+    }
+
+    val += g_app.video_send_target_video_frame_rate;
+    ESP_LOGI(TAG, "vps=%u, skip=%d, target=%u, latest=%u",
+         g_app.video_send_target_video_frame_rate, skip,
+         g_app.total_target_send_bps, g_app.video_latest_2_second_send_bps);
+
+    return skip;
+}
 
 static esp_err_t es7210_write_reg(i2c_bus_handle_t i2c_handle, uint8_t reg_addr, uint8_t data)
 {
@@ -370,7 +424,7 @@ static esp_err_t recorder_pipeline_open(void)
 #endif
   i2s_cfg.task_core     = 1;
   i2s_cfg.i2s_config.channel_format  = I2S_CHANNEL_FMT_ONLY_LEFT;
-  i2s_cfg.i2s_config.sample_rate     = I2S_SAMPLE_RATE;
+  i2s_cfg.i2s_config.sample_rate     = CONFIG_PCM_DATA_LEN;
   i2s_cfg.i2s_config.mode            = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_RX);
 #ifdef CONFIG_ESP32_S3_KORVO2_V3_BOARD
   i2s_cfg.i2s_config.bits_per_sample = 32;
@@ -391,9 +445,10 @@ static esp_err_t recorder_pipeline_open(void)
   // algo_config.task_core = 1;
   // algo_config.task_stack = 4 * 1024;
   algo_config.algo_mask  = ALGORITHM_STREAM_USE_AEC;
+  algo_config.aec_low_cost = true;
 
   element_algo = algo_stream_init(&algo_config);
-  audio_element_set_music_info(element_algo, I2S_SAMPLE_RATE, 1, I2S_BITS);
+  audio_element_set_music_info(element_algo, CONFIG_PCM_DATA_LEN, 1, I2S_BITS);
 
   audio_pipeline_register(recorder, i2s_stream_reader, "i2s");
   audio_pipeline_register(recorder, element_algo, "algo");
@@ -430,7 +485,7 @@ static esp_err_t player_pipeline_open()
   i2s_cfg.uninstall_drv              = false;
   i2s_cfg.i2s_config.channel_format  = I2S_CHANNEL_FMT_ONLY_LEFT;
   i2s_cfg.i2s_config.mode            = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_RX);
-  i2s_cfg.i2s_config.sample_rate     = I2S_SAMPLE_RATE;
+  i2s_cfg.i2s_config.sample_rate     = CONFIG_PCM_DATA_LEN;
 #ifdef CONFIG_ESP32_S3_KORVO2_V3_BOARD
   i2s_cfg.i2s_config.bits_per_sample = 32;
   i2s_cfg.need_expand                = true;
@@ -549,7 +604,11 @@ static void video_capture_and_send_task(void *args)
 
       jpeg_enc_process(jpg_encoder, pic->buf, pic->len, image_buf, image_buf_len, &image_len);
 
-      send_video_frame(image_buf, image_len);
+      __calc_latest_2_sec_video_data_bps(image_len);
+
+      if (!__is_send_bps_adjust_need_skip_this_frame()) {
+          send_video_frame(image_buf, image_len);
+      }
 
       esp_camera_fb_return(pic);
     }
@@ -566,7 +625,7 @@ static void video_capture_and_send_task(void *args)
 
 static void audio_capture_and_send_task(void *threadid)
 {
-  int read_len = DEFAULT_PCM_CAPTURE_LEN;
+  int read_len = CONFIG_PCM_DATA_LEN;
   int ret;
 
   uint8_t *pcm_buf = heap_caps_malloc(read_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -589,7 +648,7 @@ static void audio_capture_and_send_task(void *threadid)
       if (ret != read_len) {
         ESP_LOGW(TAG, "write error, expect %d, but only %d", read_len, ret);
       }
-      send_audio_frame(pcm_buf, DEFAULT_PCM_CAPTURE_LEN);
+      send_audio_frame(pcm_buf, CONFIG_PCM_DATA_LEN);
     }
 
     //deinit
@@ -616,7 +675,7 @@ static void create_capture_task(void)
     ESP_LOGE(TAG, "Unable to create video capture semaphore!");
     return;
   }
-  rval = audio_thread_create(g_video_thread, "video_task", video_capture_and_send_task, NULL, 5 * 1024, PRIO_TASK_FETCH, true, 1);
+  rval = audio_thread_create(g_video_thread, "video_task", video_capture_and_send_task, NULL, 5 * 1024, PRIO_TASK_FETCH, true, 0);
   if (rval != ESP_OK) {
     ESP_LOGE(TAG, "Unable to create video capture thread!");
     return;
@@ -628,7 +687,7 @@ static void create_capture_task(void)
     ESP_LOGE(TAG, "Unable to create audio capture semaphore!");
     return;
   }
-  rval = audio_thread_create(g_audio_thread, "audio_task", audio_capture_and_send_task, NULL, 5 * 1024, PRIO_TASK_FETCH, true, 1);
+  rval = audio_thread_create(g_audio_thread, "audio_task", audio_capture_and_send_task, NULL, 5 * 1024, PRIO_TASK_FETCH, true, 0);
   if (rval != ESP_OK) {
     ESP_LOGE(TAG, "Unable to create audio capture thread!");
     return;
@@ -698,6 +757,17 @@ static void iot_cb_receive_video_frame(ago_video_frame_t *frame)
 static void iot_cb_receive_audio_frame(ago_audio_frame_t *frame)
 {
   raw_stream_write(raw_write, (char *)frame->audio_buffer, frame->audio_buffer_size);
+}
+
+static void iot_cb_target_bitrate_changed(uint32_t target_bps)
+{
+  printf("Bandwidth change detected. Please adjust encoder bitrate to %u kbps\n", target_bps / 1000);
+  g_app.total_target_send_bps = target_bps;
+}
+
+static void iot_cb_key_frame_requested(void)
+{
+  printf("Frame loss detected. Please notify the encoder to generate key frame immediately\n");
 }
 
 #ifndef CONFIG_BLUFI_ENABLE
@@ -1082,23 +1152,17 @@ static agora_iot_handle_t connect_agora_iot_service(device_handle_t dev_state)
       .cb_stop_push_frame     = iot_cb_stop_push_frame,
       .cb_receive_audio_frame = iot_cb_receive_audio_frame,
       .cb_receive_video_frame = iot_cb_receive_video_frame,
-  #ifdef CONFIG_SEND_H264_FRAMES
       .cb_target_bitrate_changed = iot_cb_target_bitrate_changed,
       .cb_key_frame_requested    = iot_cb_key_frame_requested,
-  #endif
     },
     .disable_rtc_log      = true,
     .log_level            = AGORA_LOG_INFO,
     .max_possible_bitrate = DEFAULT_MAX_BITRATE,
     .enable_audio_config  = true,
     .audio_config = {
-#ifdef CONFIG_AUDIO_SAMPLE_RATE_8K
-      .audio_codec_type = AGO_AUDIO_CODEC_TYPE_G711U,
-#else
-      .audio_codec_type = AGO_AUDIO_CODEC_TYPE_G722,
-#endif
+      .audio_codec_type = AUDIO_CODEC_TYPE,
 #if defined(CONFIG_SEND_PCM_DATA)
-      .pcm_sample_rate  = I2S_SAMPLE_RATE,
+      .pcm_sample_rate  = CONFIG_PCM_SAMPLE_RATE,
       .pcm_channel_num  = I2S_CHANNELS,
 #endif
     },
@@ -1216,7 +1280,7 @@ int app_main(void)
 
   init_camera();
 
-  jpg_encoder = init_jpeg_encoder(40, 0, 20, JPEG_SUB_SAMPLE_YUV420);
+  jpg_encoder = init_jpeg_encoder(40, 0, 20, JPEG_SUB_SAMPLE_YUV422);
   if (!jpg_encoder) {
     ESP_LOGE(TAG, "Failed to initialize jpeg encoder!");
     goto EXIT;
