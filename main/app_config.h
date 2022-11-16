@@ -50,10 +50,14 @@ rqXRfboQnoZsG4q5WTP468SQvvG5\r\n\
 
 #define CONFIG_BLUFI_ENABLE
 
+#ifndef CONFIG_AUDIO_ONLY
+#define UVC_STREAM_ENABLE
+#endif
+
 #define NVS_STORAGE
 // #define CONFIG_SDCARD
 
-#define FRAMESIZE (1) // 0 for QVGA and 1 for HVGA, 2 for VGA
+#define FRAMESIZE (0) // 0 for QVGA and 1 for HVGA, 2 for VGA
 
 #if (FRAMESIZE == 0)
 #define CONFIG_FRAME_SIZE (FRAMESIZE_QVGA)

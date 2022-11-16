@@ -39,10 +39,10 @@
 #include "audio_mem.h"
 #include "audio_pipeline.h"
 #include "audio_sys.h"
+#ifdef CONFIG_ESP32_S3_KORVO2_V3_BOARD
 #include "es7210.h"
-#include "esp_camera.h"
+#endif
 #include "esp_err.h"
-#include "esp_jpeg_enc.h"
 #include "esp_log.h"
 #include "esp_pm.h"
 #include "esp_wifi.h"
@@ -60,7 +60,12 @@
 #include "esp_sleep.h"
 #include "driver/rtc_io.h"
 #include "audio_thread.h"
-
+#ifdef UVC_STREAM_ENABLE
+#include "uvc_stream.h"
+#else
+#include "esp_camera.h"
+#include "esp_jpeg_enc.h"
+#endif
 #include "cJSON.h"
 
 static const char *TAG = "Agora";
@@ -77,25 +82,6 @@ static const char *TAG = "Agora";
 #define DEFAULT_PS_MODE WIFI_PS_NONE
 #endif
 
-
-#define CAM_PIN_PWDN -1 // power down is not used
-#define CAM_PIN_RESET -1 // software reset will be performed
-#define CAM_PIN_XCLK GPIO_NUM_40
-#define CAM_PIN_SIOD GPIO_NUM_17
-#define CAM_PIN_SIOC GPIO_NUM_18
-
-#define CAM_PIN_D7 GPIO_NUM_39
-#define CAM_PIN_D6 GPIO_NUM_41
-#define CAM_PIN_D5 GPIO_NUM_42
-#define CAM_PIN_D4 GPIO_NUM_12
-#define CAM_PIN_D3 GPIO_NUM_3
-#define CAM_PIN_D2 GPIO_NUM_14
-#define CAM_PIN_D1 GPIO_NUM_47
-#define CAM_PIN_D0 GPIO_NUM_13
-#define CAM_PIN_VSYNC GPIO_NUM_21
-#define CAM_PIN_HREF GPIO_NUM_38
-#define CAM_PIN_PCLK GPIO_NUM_11
-
 #define PRIO_TASK_FETCH (21)
 
 #define I2S_CHANNELS 1
@@ -103,7 +89,7 @@ static const char *TAG = "Agora";
 
 #define ESP_READ_BUFFER_SIZE 320
 
-#define DEFAULT_MAX_BITRATE (2000000)
+#define DEFAULT_MAX_BITRATE (1000000)
 
 #define CONFIG_CONTENT_LEN   256
 
@@ -128,6 +114,96 @@ static app_t g_app = {
     .up_mode                = SYS_UP_MODE_POWERON,
     .video_capture_fps      = BASE_VIDEO_FPS, 
 };
+
+#ifdef UVC_STREAM_ENABLE
+/* USB Camera Descriptors Related MACROS,
+the quick demo skip the standred get descriptors process,
+users need to get params from camera descriptors from PC side,
+eg. run `lsusb -v` in linux,
+then hardcode the related MACROS below
+*/
+#define DESCRIPTOR_CONFIGURATION_INDEX 1
+#define DESCRIPTOR_FORMAT_MJPEG_INDEX  2
+
+#define DESCRIPTOR_FRAME_640_480_INDEX 1
+#define DESCRIPTOR_FRAME_352_288_INDEX 2
+#define DESCRIPTOR_FRAME_320_240_INDEX 3
+#define DESCRIPTOR_FRAME_160_120_INDEX 4
+
+#define DESCRIPTOR_FRAME_5FPS_INTERVAL  2000000
+#define DESCRIPTOR_FRAME_10FPS_INTERVAL 1000000
+#define DESCRIPTOR_FRAME_15FPS_INTERVAL 666666
+#define DESCRIPTOR_FRAME_30FPS_INTERVAL 333333
+
+#define DESCRIPTOR_STREAM_INTERFACE_INDEX   1
+#define DESCRIPTOR_STREAM_INTERFACE_ALT_MPS_128 1
+#define DESCRIPTOR_STREAM_INTERFACE_ALT_MPS_256 2
+#define DESCRIPTOR_STREAM_INTERFACE_ALT_MPS_512 3
+#define DESCRIPTOR_STREAM_INTERFACE_BULK        0
+
+#define DESCRIPTOR_STREAM_ISOC_ENDPOINT_ADDR 0x81
+
+/* Demo Related MACROS */
+#if (FRAMESIZE == 0)
+/* Isochronous transfer mode config */
+#define DEMO_XFER_MODE        UVC_XFER_ISOC
+#define DEMO_FRAME_WIDTH      320
+#define DEMO_FRAME_HEIGHT     240
+#define DEMO_XFER_BUFFER_SIZE (35 * 1024) //Double buffer
+#define DEMO_FRAME_INDEX      DESCRIPTOR_FRAME_320_240_INDEX
+#define DEMO_FRAME_INTERVAL   DESCRIPTOR_FRAME_15FPS_INTERVAL
+#define DEMO_INTERFACE_ALT    DESCRIPTOR_STREAM_INTERFACE_ALT_MPS_512
+#define DEMO_EP_MPS           512         // max MPS of esp32-s2/s3 is 1*512
+#elif (FRAMESIZE == 2)
+/* Bulk transfer mode config */
+#define DEMO_XFER_MODE        UVC_XFER_BULK
+#define DEMO_FRAME_WIDTH      640
+#define DEMO_FRAME_HEIGHT     480
+#define DEMO_XFER_BUFFER_SIZE (48 * 1024) //Double buffer
+#define DEMO_FRAME_INDEX      DESCRIPTOR_FRAME_640_480_INDEX
+#define DEMO_FRAME_INTERVAL   DESCRIPTOR_FRAME_15FPS_INTERVAL
+#define DEMO_INTERFACE_ALT    DESCRIPTOR_STREAM_INTERFACE_BULK
+#define DEMO_EP_MPS           64
+#endif
+
+#define BIT1_NEW_FRAME_START (0x01 << 1)
+#define BIT2_NEW_FRAME_END (0x01 << 2)
+static EventGroupHandle_t s_evt_handle;
+static camera_fb_t s_fb = {0};
+
+#else //UVC_STREAM_ENABLE
+
+#if (FRAMESIZE == 0)
+#define CONFIG_FRAME_SIZE (FRAMESIZE_QVGA)
+#define CONFIG_FRAME_WIDTH 320
+#define CONFIG_FRAME_HIGH 240
+#elif (FRAMESIZE == 1)
+#define CONFIG_FRAME_SIZE (FRAMESIZE_HVGA)
+#define CONFIG_FRAME_WIDTH 480
+#define CONFIG_FRAME_HIGH 320
+#else
+#define CONFIG_FRAME_SIZE (FRAMESIZE_VGA)
+#define CONFIG_FRAME_WIDTH 640
+#define CONFIG_FRAME_HIGH 480
+#endif
+
+#define CAM_PIN_PWDN -1 // power down is not used
+#define CAM_PIN_RESET -1 // software reset will be performed
+#define CAM_PIN_XCLK GPIO_NUM_40
+#define CAM_PIN_SIOD GPIO_NUM_17
+#define CAM_PIN_SIOC GPIO_NUM_18
+
+#define CAM_PIN_D7 GPIO_NUM_39
+#define CAM_PIN_D6 GPIO_NUM_41
+#define CAM_PIN_D5 GPIO_NUM_42
+#define CAM_PIN_D4 GPIO_NUM_12
+#define CAM_PIN_D3 GPIO_NUM_3
+#define CAM_PIN_D2 GPIO_NUM_14
+#define CAM_PIN_D1 GPIO_NUM_47
+#define CAM_PIN_D0 GPIO_NUM_13
+#define CAM_PIN_VSYNC GPIO_NUM_21
+#define CAM_PIN_HREF GPIO_NUM_38
+#define CAM_PIN_PCLK GPIO_NUM_11
 
 static camera_config_t camera_config = {
   .pin_pwdn  = CAM_PIN_PWDN,
@@ -163,15 +239,16 @@ static camera_config_t camera_config = {
   // .conv_mode    = YUV422_TO_YUV420,
 };
 
+static void *jpg_encoder;
+#endif
+
 static agora_iot_handle_t g_handle = NULL;
 static device_handle_t dev_state = NULL;
-
 
 static uint32_t image_cnt = 0;
 static uint32_t tick_begin = 0;
 static esp_timer_handle_t fps_timer = NULL;
 
-static void *jpg_encoder;
 static audio_element_handle_t raw_read, raw_write, element_algo;
 static audio_pipeline_handle_t recorder, player;
 
@@ -237,13 +314,14 @@ static uint32_t __is_send_bps_adjust_need_skip_this_frame(void)
     }
 
     val += g_app.video_send_target_video_frame_rate;
-    ESP_LOGI(TAG, "vps=%u, skip=%d, target=%u, latest=%u",
-         g_app.video_send_target_video_frame_rate, skip,
-         g_app.total_target_send_bps, g_app.video_latest_2_second_send_bps);
+    // ESP_LOGI(TAG, "vps=%u, skip=%d, target=%u, latest=%u",
+    //      g_app.video_send_target_video_frame_rate, skip,
+    //      g_app.total_target_send_bps, g_app.video_latest_2_second_send_bps);
 
     return skip;
 }
 
+#ifdef CONFIG_ESP32_S3_KORVO2_V3_BOARD
 static esp_err_t es7210_write_reg(i2c_bus_handle_t i2c_handle, uint8_t reg_addr, uint8_t data)
 {
   return i2c_bus_write_bytes(i2c_handle, ES7210_AD1_AD0_00, &reg_addr, sizeof(reg_addr), &data, sizeof(data));
@@ -270,6 +348,7 @@ static void set_es7210_tdm_mode(void)
   es7210_write_reg(i2c_handle, 0x49, 0x08);
   es7210_write_reg(i2c_handle, 0x4a, 0x08);
 }
+#endif
 
 static void fps_timer_callback(void *arg)
 {
@@ -438,8 +517,6 @@ static esp_err_t recorder_pipeline_open(void)
 #else
   algo_config.input_type = ALGORITHM_STREAM_INPUT_TYPE2;
 #endif
-  // algo_config.task_core = 1;
-  // algo_config.task_stack = 4 * 1024;
   algo_config.algo_mask  = ALGORITHM_STREAM_USE_AEC;
   algo_config.aec_low_cost = true;
 
@@ -507,11 +584,112 @@ static void setup_audio(void)
   audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
   audio_hal_set_volume(board_handle->audio_hal, 75);
 
+#ifdef CONFIG_ESP32_S3_KORVO2_V3_BOARD
   es7210_mic_select(ES7210_INPUT_MIC1 | ES7210_INPUT_MIC2 | ES7210_INPUT_MIC3 | ES7210_INPUT_MIC4);
   set_es7210_tdm_mode();
+#endif
 }
 
 #ifndef CONFIG_AUDIO_ONLY
+#ifdef UVC_STREAM_ENABLE
+static camera_fb_t* esp_camera_fb_get()
+{
+  xEventGroupWaitBits(s_evt_handle, BIT1_NEW_FRAME_START, true, true, portMAX_DELAY);
+  ESP_LOGD(TAG, "peek frame = %ld", s_fb.timestamp.tv_sec);
+  return &s_fb;
+}
+
+static void esp_camera_fb_return(camera_fb_t * fb)
+{
+  ESP_LOGD(TAG, "release frame = %ld", fb->timestamp.tv_sec);
+  xEventGroupSetBits(s_evt_handle, BIT2_NEW_FRAME_END);
+}
+
+/* *******************************************************************************************
+ * This callback function runs once per frame. Use it to perform any
+ * quick processing you need, or have it put the frame into your application's
+ * input queue. If this function takes too long, you'll start losing frames. */
+static void frame_cb(uvc_frame_t *frame, void *ptr)
+{
+  ESP_LOGD(TAG, "callback! frame_format = %d, seq = %u, width = %d, height = %d, length = %u, ptr = %d",
+           frame->frame_format, frame->sequence, frame->width, frame->height, frame->data_bytes, (int) ptr);
+
+  switch (frame->frame_format) {
+    case UVC_FRAME_FORMAT_MJPEG:
+      s_fb.buf              = frame->data;
+      s_fb.len              = frame->data_bytes;
+      s_fb.width            = frame->width;
+      s_fb.height           = frame->height;
+      s_fb.format           = PIXFORMAT_JPEG;
+      s_fb.timestamp.tv_sec = frame->sequence;
+      xEventGroupSetBits(s_evt_handle, BIT1_NEW_FRAME_START);
+      xEventGroupWaitBits(s_evt_handle, BIT2_NEW_FRAME_END, true, true, pdTICKS_TO_MS(1000));
+      break;
+    default:
+      ESP_LOGW(TAG, "Format not supported");
+      assert(0);
+      break;
+  }
+}
+
+static void setup_uvc_stream(void)
+{
+  audio_board_usb_cam_init();
+
+  /* create eventgroup for task sync */
+  s_evt_handle = xEventGroupCreate();
+  if (s_evt_handle == NULL) {
+    ESP_LOGE(TAG, "line-%u event group create faild", __LINE__);
+    assert(0);
+  }
+
+  /* malloc double buffer for usb payload, xfer_buffer_size >= frame_buffer_size */
+  uint8_t *xfer_buffer_a = (uint8_t *)heap_caps_malloc(DEMO_XFER_BUFFER_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  assert(xfer_buffer_a != NULL);
+  uint8_t *xfer_buffer_b = (uint8_t *)heap_caps_malloc(DEMO_XFER_BUFFER_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  assert(xfer_buffer_b != NULL);
+
+  /* malloc frame buffer for a jpeg frame*/
+  uint8_t *frame_buffer = (uint8_t *)heap_caps_malloc(DEMO_XFER_BUFFER_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  assert(frame_buffer != NULL);
+
+  /* the quick demo skip the standred get descriptors process,
+  users need to get params from camera descriptors from PC side,
+  eg. run `lsusb -v` in linux, then modify related MACROS */
+  uvc_config_t uvc_config = {
+    .xfer_type         = UVC_XFER_ISOC,
+    .dev_speed         = USB_SPEED_FULL,
+    .configuration     = DESCRIPTOR_CONFIGURATION_INDEX,
+    .format_index      = DESCRIPTOR_FORMAT_MJPEG_INDEX,
+    .frame_width       = DEMO_FRAME_WIDTH,
+    .frame_height      = DEMO_FRAME_HEIGHT,
+    .frame_index       = DEMO_FRAME_INDEX,
+    .frame_interval    = DEMO_FRAME_INTERVAL,
+    .interface         = DESCRIPTOR_STREAM_INTERFACE_INDEX,
+    .interface_alt     = DEMO_INTERFACE_ALT,
+    .isoc_ep_addr      = DESCRIPTOR_STREAM_ISOC_ENDPOINT_ADDR,
+    .isoc_ep_mps       = DEMO_EP_MPS,
+    .xfer_buffer_size  = DEMO_XFER_BUFFER_SIZE,
+    .xfer_buffer_a     = xfer_buffer_a,
+    .xfer_buffer_b     = xfer_buffer_b,
+    .frame_buffer_size = DEMO_XFER_BUFFER_SIZE,
+    .frame_buffer      = frame_buffer,
+  };
+
+  /* pre-config UVC driver with params from known USB Camera Descriptors*/
+  esp_err_t ret = uvc_streaming_config(&uvc_config);
+
+  /* Start camera IN stream with pre-configs, uvc driver will create multi-tasks internal
+  to handle usb data from different pipes, and user's callback will be called after new frame ready. */
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "uvc streaming config failed");
+  } else {
+    ret = uvc_streaming_start(frame_cb, NULL);
+    uvc_streaming_suspend();
+    ESP_LOGI(TAG, "uvc streaming setup success %d.", ret);
+  }
+}
+#else //#ifdef UVC_STREAM_ENABLE
 static void init_camera(void)
 {
   // initialize the camera
@@ -534,7 +712,7 @@ static void *init_jpeg_encoder(int quality, int hfm_core, int hfm_priority, jpeg
   jpeg_enc_info.hfm_task_priority = hfm_priority;
   return jpeg_enc_open(&jpeg_enc_info);
 }
-
+#endif //#ifdef UVC_STREAM_ENABLE
 
 static int send_video_frame(uint8_t *data, uint32_t len)
 {
@@ -581,19 +759,29 @@ static void video_capture_and_send_task(void *args)
       camera_fb_t *pic = esp_camera_fb_get();
       image_cnt++;
 
-      jpeg_enc_process(jpg_encoder, pic->buf, pic->len, image_buf, image_buf_len, &image_len);
-
       __calc_latest_2_sec_video_data_bps(image_len);
 
       if (!__is_send_bps_adjust_need_skip_this_frame()) {
-          send_video_frame(image_buf, image_len);
+#ifndef UVC_STREAM_ENABLE
+        jpeg_enc_process(jpg_encoder, pic->buf, pic->len, image_buf, image_buf_len, &image_len);
+        send_video_frame(image_buf, image_len);
+#else
+        image_len = pic->len;
+        send_video_frame(pic->buf, pic->len); 
+#endif
       }
 
+      usleep(20 * 1000);
       esp_camera_fb_return(pic);
     }
   }
   free(image_buf);
-  jpeg_enc_close(jpg_encoder);
+
+#ifndef UVC_STREAM_ENABLE
+  if (jpg_encoder) {
+    jpeg_enc_close(jpg_encoder);
+  }
+#endif
 
 #ifdef CONFIG_ENABLE_RUN_TIME_STATS
   esp_timer_stop(fps_timer);
@@ -673,7 +861,7 @@ static void create_capture_task(void)
     ESP_LOGE(TAG, "Unable to create video capture semaphore!");
     return;
   }
-  rval = audio_thread_create(g_video_thread, "video_task", video_capture_and_send_task, NULL, 5 * 1024, PRIO_TASK_FETCH, true, 0);
+  rval = audio_thread_create(g_video_thread, "video_task", video_capture_and_send_task, NULL, 5 * 1024, PRIO_TASK_FETCH, true, 1);
   if (rval != ESP_OK) {
     ESP_LOGE(TAG, "Unable to create video capture thread!");
     return;
@@ -707,9 +895,13 @@ static void iot_cb_start_push_frame(uint8_t push_type)
 {
   ESP_LOGI(TAG, "Start push audio/video frames");
   g_app.b_call_session_started = true;
-  
+
   // record push type
   g_push_type |= push_type;
+
+#ifdef UVC_STREAM_ENABLE
+  uvc_streaming_resume();
+#endif //#ifdef UVC_STREAM_ENABLE
 
 #ifndef CONFIG_AUDIO_ONLY
   xSemaphoreGive(g_video_capture_sem);
@@ -725,6 +917,10 @@ static void iot_cb_stop_push_frame(uint8_t push_type)
 
   // record push type
   g_push_type &= ~push_type;
+
+#ifdef UVC_STREAM_ENABLE
+  uvc_streaming_suspend();
+#endif
 }
 
 static void iot_cb_call_hung_up(const char *peer_name)
@@ -765,7 +961,7 @@ static void iot_cb_target_bitrate_changed(uint32_t target_bps)
 
 static void iot_cb_key_frame_requested(void)
 {
-  printf("Frame loss detected. Please notify the encoder to generate key frame immediately\n");
+  // printf("Frame loss detected. Please notify the encoder to generate key frame immediately\n");
 }
 
 #ifndef CONFIG_BLUFI_ENABLE
@@ -1282,6 +1478,9 @@ int app_main(void)
   setup_audio();
 
 #ifndef CONFIG_AUDIO_ONLY
+#ifdef UVC_STREAM_ENABLE
+  setup_uvc_stream();
+#else //#ifdef UVC_STREAM_ENABLE
   init_camera();
 
   jpg_encoder = init_jpeg_encoder(40, 0, 20, JPEG_SUB_SAMPLE_YUV422);
@@ -1289,6 +1488,7 @@ int app_main(void)
     ESP_LOGE(TAG, "Failed to initialize jpeg encoder!");
     goto EXIT;
   }
+#endif //#ifdef UVC_STREAM_ENABLE
 #endif
 
   create_capture_task();
@@ -1357,6 +1557,10 @@ EXIT:
   if (dev_state) {
     device_destroy_state(dev_state);
   }
+
+#ifdef UVC_STREAM_ENABLE
+  uvc_streaming_stop();
+#endif
 
   ESP_LOGW(TAG, "App exited.");
   return 0;
