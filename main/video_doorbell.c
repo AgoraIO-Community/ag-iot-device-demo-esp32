@@ -89,11 +89,12 @@ static const char *TAG = "Agora";
 
 #define ESP_READ_BUFFER_SIZE 320
 
-#define DEFAULT_MAX_BITRATE (1000000)
+#define BWE_MIN_BPS (50 * 1000)
+#define BWE_MAX_BPS (1500 * 1000)
+#define BASE_VIDEO_FPS 10
 
 #define CONFIG_CONTENT_LEN   256
 
-#define BASE_VIDEO_FPS 10
 
 typedef struct {
   bool b_wifi_connected;
@@ -112,7 +113,10 @@ static app_t g_app = {
     .b_wifi_connected       = false,
     .b_exit                 = false,
     .up_mode                = SYS_UP_MODE_POWERON,
-    .video_capture_fps      = BASE_VIDEO_FPS, 
+    .video_capture_fps      = BASE_VIDEO_FPS,
+    .video_latest_2_second_send_bps = BWE_MIN_BPS,
+    .video_send_target_video_frame_rate = BASE_VIDEO_FPS,
+    .total_target_send_bps   = BWE_MAX_BPS,
 };
 
 #ifdef UVC_STREAM_ENABLE
@@ -352,10 +356,16 @@ static void set_es7210_tdm_mode(void)
 
 static void fps_timer_callback(void *arg)
 {
-  uint32_t cur_tick = xTaskGetTickCount();
-  uint32_t duration = cur_tick - tick_begin;
-  ESP_LOGW(TAG, "duration %-15u, image cnt %-10u, fps %f", duration, image_cnt,
-            (float)image_cnt / (float)(duration / CONFIG_FREERTOS_HZ));
+  if (g_app.b_call_session_started && image_cnt) {
+    uint32_t cur_tick = xTaskGetTickCount();
+    uint32_t duration = cur_tick - tick_begin;
+
+    ESP_LOGW(TAG, "duration %-15u, image cnt %-10u, fps %f", duration, image_cnt,
+              (float)image_cnt / (float)(duration / CONFIG_FREERTOS_HZ));
+
+    image_cnt  = 0;
+    tick_begin = cur_tick;
+  }
 
   audio_sys_get_real_time_stats();
   ESP_LOGI(TAG, "MEM Total:%d Bytes, Inter:%d Bytes, Dram:%d Bytes", esp_get_free_heap_size(),
@@ -418,7 +428,6 @@ static void start_key_service(esp_periph_set_handle_t set)
   input_key_service_info_t input_key_info[] = INPUT_KEY_DEFAULT_INFO();
   input_key_service_cfg_t input_cfg = INPUT_KEY_SERVICE_DEFAULT_CONFIG();
   input_cfg.handle                 = set;
-  input_cfg.based_cfg.task_stack   = 5 * 1024;
   // input_cfg.based_cfg.extern_stack = true;
   periph_service_handle_t input_ser = input_key_service_create(&input_cfg);
 
@@ -738,14 +747,6 @@ static void video_capture_and_send_task(void *args)
   const int image_buf_len = 30 * 1024;
   int image_len = 0;
 
-#ifdef CONFIG_ENABLE_RUN_TIME_STATS
-  esp_timer_create_args_t create_args = { .callback = fps_timer_callback, .arg = NULL, .name = "fps timer" };
-  esp_timer_create(&create_args, &fps_timer);
-  esp_timer_start_periodic(fps_timer, 20 * 1000 * 1000);
-  tick_begin = xTaskGetTickCount();
-  image_cnt = 0;
-#endif
-
   uint8_t *image_buf = heap_caps_malloc(image_buf_len, MALLOC_CAP_SPIRAM);
   if (!image_buf) {
     ESP_LOGE(TAG, "Failed to alloc video buffer!");
@@ -757,21 +758,23 @@ static void video_capture_and_send_task(void *args)
 
     while (g_app.b_call_session_started) {
       camera_fb_t *pic = esp_camera_fb_get();
-      image_cnt++;
 
-      __calc_latest_2_sec_video_data_bps(image_len);
-
-      if (!__is_send_bps_adjust_need_skip_this_frame()) {
 #ifndef UVC_STREAM_ENABLE
+      __calc_latest_2_sec_video_data_bps(image_len);
+      if (!__is_send_bps_adjust_need_skip_this_frame()) {
+        image_cnt++;
         jpeg_enc_process(jpg_encoder, pic->buf, pic->len, image_buf, image_buf_len, &image_len);
         send_video_frame(image_buf, image_len);
-#else
-        image_len = pic->len;
-        send_video_frame(pic->buf, pic->len); 
-#endif
       }
+#else
+      __calc_latest_2_sec_video_data_bps(pic->len);
+      if (!__is_send_bps_adjust_need_skip_this_frame()) {
+        image_cnt++;
+        send_video_frame(pic->buf, pic->len); 
+      }
+#endif
 
-      usleep(20 * 1000);
+      vTaskDelay(20 / portTICK_PERIOD_MS);
       esp_camera_fb_return(pic);
     }
   }
@@ -783,10 +786,6 @@ static void video_capture_and_send_task(void *args)
   }
 #endif
 
-#ifdef CONFIG_ENABLE_RUN_TIME_STATS
-  esp_timer_stop(fps_timer);
-  esp_timer_delete(fps_timer);
-#endif
   vTaskDelete(NULL);
 }
 #endif
@@ -1351,7 +1350,7 @@ static agora_iot_handle_t connect_agora_iot_service(device_handle_t dev_state)
     },
     .disable_rtc_log      = true,
     .log_level            = AGORA_LOG_INFO,
-    .max_possible_bitrate = DEFAULT_MAX_BITRATE,
+    .max_possible_bitrate = BWE_MAX_BPS,
     .enable_audio_config  = true,
     .audio_config = {
       .audio_codec_type = AUDIO_CODEC_TYPE,
@@ -1470,28 +1469,18 @@ int app_main(void)
     handle_wakeup_cause();
 #endif
 
+#ifdef CONFIG_ENABLE_RUN_TIME_STATS
+  esp_timer_create_args_t create_args = { .callback = fps_timer_callback, .arg = NULL, .name = "fps timer" };
+  esp_timer_create(&create_args, &fps_timer);
+  esp_timer_start_periodic(fps_timer, 20 * 1000 * 1000);
+  tick_begin = xTaskGetTickCount();
+  image_cnt  = 0;
+#endif
+
   // Initialize peripherals management
   ESP_LOGI(TAG, "Initialize peripherals");
   esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
   esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
-
-  setup_audio();
-
-#ifndef CONFIG_AUDIO_ONLY
-#ifdef UVC_STREAM_ENABLE
-  setup_uvc_stream();
-#else //#ifdef UVC_STREAM_ENABLE
-  init_camera();
-
-  jpg_encoder = init_jpeg_encoder(40, 0, 20, JPEG_SUB_SAMPLE_YUV422);
-  if (!jpg_encoder) {
-    ESP_LOGE(TAG, "Failed to initialize jpeg encoder!");
-    goto EXIT;
-  }
-#endif //#ifdef UVC_STREAM_ENABLE
-#endif
-
-  create_capture_task();
 
 #ifdef CONFIG_SDCARD
     ESP_LOGI(TAG, "[1.0] Mount sdcard");
@@ -1512,14 +1501,32 @@ int app_main(void)
     ESP_LOGE(TAG, "connect_agora_iot_service failed.\n");
     goto EXIT;   
   }
-  ESP_LOGI(TAG, "step2: device bringup ok\n");
 
+  ESP_LOGI(TAG, "step2: device bringup ok\n");
   // connect to agora iot service
   g_handle = connect_agora_iot_service(dev_state);
   if (NULL == g_handle) {
     ESP_LOGE(TAG, "connect_agora_iot_service failed.\n");
     goto EXIT;
   }
+
+  setup_audio();
+
+#ifndef CONFIG_AUDIO_ONLY
+#ifdef UVC_STREAM_ENABLE
+  setup_uvc_stream();
+#else //#ifdef UVC_STREAM_ENABLE
+  init_camera();
+
+  jpg_encoder = init_jpeg_encoder(40, 0, 20, JPEG_SUB_SAMPLE_YUV422);
+  if (!jpg_encoder) {
+    ESP_LOGE(TAG, "Failed to initialize jpeg encoder!");
+    goto EXIT;
+  }
+#endif //#ifdef UVC_STREAM_ENABLE
+#endif
+
+  create_capture_task();
 
   // update device state
   if (0 != update_device_work_state(g_handle, g_app.up_mode)) {
@@ -1560,6 +1567,11 @@ EXIT:
 
 #ifdef UVC_STREAM_ENABLE
   uvc_streaming_stop();
+#endif
+
+#ifdef CONFIG_ENABLE_RUN_TIME_STATS
+  esp_timer_stop(fps_timer);
+  esp_timer_delete(fps_timer);
 #endif
 
   ESP_LOGW(TAG, "App exited.");
