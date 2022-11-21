@@ -527,7 +527,7 @@ static esp_err_t recorder_pipeline_open(void)
   algo_config.input_type = ALGORITHM_STREAM_INPUT_TYPE2;
 #endif
   algo_config.algo_mask  = ALGORITHM_STREAM_USE_AEC;
-  algo_config.aec_low_cost = true;
+  // algo_config.aec_low_cost = true;
 
   element_algo = algo_stream_init(&algo_config);
   audio_element_set_music_info(element_algo, CONFIG_PCM_SAMPLE_RATE, 1, I2S_BITS);
@@ -1491,6 +1491,20 @@ int app_main(void)
   // Monitor the key event
   start_key_service(set);
 
+#ifndef CONFIG_AUDIO_ONLY
+#ifdef UVC_STREAM_ENABLE
+  setup_uvc_stream();
+#else //#ifdef UVC_STREAM_ENABLE
+  init_camera();
+
+  jpg_encoder = init_jpeg_encoder(40, 0, 20, JPEG_SUB_SAMPLE_YUV420);
+  if (!jpg_encoder) {
+    ESP_LOGE(TAG, "Failed to initialize jpeg encoder!");
+    goto EXIT;
+  }
+#endif //#ifdef UVC_STREAM_ENABLE
+#endif
+
   g_app.up_mode = SYS_UP_MODE_POWERON;
 
   ESP_LOGI(TAG, "step1: start init\n");
@@ -1511,20 +1525,6 @@ int app_main(void)
   }
 
   setup_audio();
-
-#ifndef CONFIG_AUDIO_ONLY
-#ifdef UVC_STREAM_ENABLE
-  setup_uvc_stream();
-#else //#ifdef UVC_STREAM_ENABLE
-  init_camera();
-
-  jpg_encoder = init_jpeg_encoder(40, 0, 20, JPEG_SUB_SAMPLE_YUV422);
-  if (!jpg_encoder) {
-    ESP_LOGE(TAG, "Failed to initialize jpeg encoder!");
-    goto EXIT;
-  }
-#endif //#ifdef UVC_STREAM_ENABLE
-#endif
 
   create_capture_task();
 
