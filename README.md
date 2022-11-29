@@ -76,7 +76,14 @@ git submodule update --init --recursive
 
 乐鑫ESP音频应用开发框架（ESP-ADF）。安装方法详见乐鑫音频应用开发指南(https://docs.espressif.com/projects/esp-adf/zh_CN/latest/get-started/index.html)。
 
-本例程支持 ADF master分支（commit id: fe4d59aa604b7146723d870ec9a1181c6846542a）
+本例程支持 ADF release/v[2.4]分支（commit id: f6b3aac67e536fe0d8149198ffc3426c738e5e3c)
+
+```bash
+cd $ADF_PATH
+git checkout release/v2.4
+git pull
+git submodule update --init --recursive
+```
 
 ### 打上 IDF 补丁
 
