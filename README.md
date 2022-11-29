@@ -63,7 +63,7 @@
 
 乐鑫ESP物联网开发框架（ESP-IDF）。安装方法详见 官方文档(https://docs.espressif.com/projects/esp-idf/zh_CN/latest/esp32/get-started/index.html#id8)。
 
-本例程支持 IDF release/v[4.4] 及以后的分支，例程默认使用 IDF release/v[4.4] 分支。
+本例程支持 IDF release/v[4.4] 及以后的分支，例程默认使用 IDF release/v[4.4] 分支（commit id: ae0e3e2e2a5508de913bef1c416130cb286a7a33）。
 
 选择 IDF 分支的方法，如下所示：
 
@@ -76,7 +76,7 @@ git submodule update --init --recursive
 
 乐鑫ESP音频应用开发框架（ESP-ADF）。安装方法详见乐鑫音频应用开发指南(https://docs.espressif.com/projects/esp-adf/zh_CN/latest/get-started/index.html)。
 
-本例程支持 ADF 最新的 master 分支
+本例程支持 ADF master分支（commit id: fe4d59aa604b7146723d870ec9a1181c6846542a）
 
 ### 打上 IDF 补丁
 
