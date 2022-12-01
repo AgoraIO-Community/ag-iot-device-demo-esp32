@@ -169,6 +169,8 @@ esptool.py --chip esp32s3 \
 
 #define CONFIG_PRODUCT_KEY "EJIJ**********5lI4"
 
+#define CONFIG_LICENSE_PID "00F8******************************D646"  /* 从市场销售处申请获取 */
+
 以上参数你均可从灵隼管理平台应用配置>>开发者选项页面中获取。
 
 参数修改完毕后，参考编译和烧录步骤构建自己的ESP32 Turnkey Demo，对应的APP端Demo开发方式请参考对应的Android端文档和IOS端文档。
