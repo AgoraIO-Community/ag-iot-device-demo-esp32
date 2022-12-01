@@ -411,6 +411,12 @@ static esp_err_t input_key_service_cb(periph_service_handle_t handle, periph_ser
       ESP_LOGW(TAG, "Erase the nvs flash %d...", ret);
     } break;
     case INPUT_KEY_USER_ID_MUTE: {
+      agora_iot_file_info_t file_info = {
+        .name_suffix  = "jpeg",
+        .buf          = NULL,
+        .size         = 0
+      };
+      alarm_message_send(g_handle, file_info, "nick_esp32", AG_ALARM_TYPE_MOD, "This is a alarm test");
       int ret = start_alarm_record(g_handle);
       ESP_LOGW(TAG, "start_alarm_record %d...", ret);
     } break;
@@ -436,6 +442,7 @@ static void start_key_service(esp_periph_set_handle_t set)
   input_key_service_info_t input_key_info[] = INPUT_KEY_DEFAULT_INFO();
   input_key_service_cfg_t input_cfg = INPUT_KEY_SERVICE_DEFAULT_CONFIG();
   input_cfg.handle                 = set;
+  input_cfg.based_cfg.task_stack   = 8 * 1024;
   // input_cfg.based_cfg.extern_stack = true;
   periph_service_handle_t input_ser = input_key_service_create(&input_cfg);
 

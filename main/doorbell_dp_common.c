@@ -43,6 +43,7 @@
 #include "esp_partition.h"
 #include "esp_mac.h"
 #include "esp_log.h"
+#include "audio_mem.h"
 
 #include "nvs.h"
 
@@ -497,10 +498,15 @@ int alarm_message_send(agora_iot_handle_t handle, agora_iot_file_info_t file_inf
   int ret = 0;
   char *image_id = NULL;
 
-  ret = agora_iot_push_alarm_image(handle, &file_info, &image_id);
-  if (ret < 0) {
-    printf("#### agora_iot_push_alarm_image failure %d\n", ret);
-    return ret;
+  if (file_info.buf != NULL) {
+    ret = agora_iot_push_alarm_image(handle, &file_info, &image_id);
+    if (ret < 0) {
+      printf("#### agora_iot_push_alarm_image failure %d\n", ret);
+      return ret;
+    }
+  } else {
+    image_id = audio_calloc(1, 32);
+    strncpy(image_id, "alarm_message_rand", 32);
   }
 
   struct timeval tv;
