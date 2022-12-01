@@ -459,7 +459,7 @@ void update_device_low_power(agora_iot_handle_t handle)
   agora_iot_dp_publish(handle, &dp_info);
 }
 
-unsigned long long start_alarm_record(agora_iot_handle_t handle)
+int start_alarm_record(agora_iot_handle_t handle)
 {
   int ret           = -1;
   struct timeval tv = { 0 };

@@ -53,7 +53,7 @@ int update_device_work_state(agora_iot_handle_t handle, sys_up_mode_e mode);
 
 void update_device_low_power(agora_iot_handle_t handle);
 
-unsigned long long start_alarm_record(agora_iot_handle_t handle);
+int start_alarm_record(agora_iot_handle_t handle);
 
 int stop_alarm_record(agora_iot_handle_t handle);
 

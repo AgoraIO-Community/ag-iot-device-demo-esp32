@@ -410,6 +410,14 @@ static esp_err_t input_key_service_cb(periph_service_handle_t handle, periph_ser
       esp_err_t ret = nvs_flash_erase_partition("nvs");
       ESP_LOGW(TAG, "Erase the nvs flash %d...", ret);
     } break;
+    case INPUT_KEY_USER_ID_MUTE: {
+      int ret = start_alarm_record(g_handle);
+      ESP_LOGW(TAG, "start_alarm_record %d...", ret);
+    } break;
+    case INPUT_KEY_USER_ID_PLAY: {
+      int ret = stop_alarm_record(g_handle);
+      ESP_LOGW(TAG, "stop_alarm_record %d...", ret);
+    } break;
     default:
       ESP_LOGE(TAG, "User Key ID[%d] does not support", (int)evt->data);
       break;
