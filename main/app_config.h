@@ -51,7 +51,7 @@ rqXRfboQnoZsG4q5WTP468SQvvG5\r\n\
 #define CONFIG_BLUFI_ENABLE
 
 #ifndef CONFIG_AUDIO_ONLY
-#define UVC_STREAM_ENABLE
+// #define UVC_STREAM_ENABLE
 #endif
 
 #define NVS_STORAGE

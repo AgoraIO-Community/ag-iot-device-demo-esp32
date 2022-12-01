@@ -534,18 +534,16 @@ int agora_iot_push_alarm_message(agora_iot_handle_t handle, unsigned long long b
  *
  * @param[in] handle          The handle of the SDK, need to initialize firstly.
  * @param[in] begin_time      The timestamp which start to record, unit: ms.
- * @param[in] end_time        The prospecting timestamp which stop to record, unit: ms.
  * @param[in] audio_type      The codec type of audio data which must matched the audio frame of agora_iot_push_audio_frame(),
  *                            otherwise pushing audio frame will failure.
  * @param[in] video_type      The codec type of video data which must matched the video frame of agora_iot_push_audio_frame(),
  *                            otherwise pushing video frame will failure.
- * @param[out] record_id      The id of the video record.
  * @return
  * - = 0: Success
  * - < 0: Failure
  */
-int agora_iot_cloud_record_start(agora_iot_handle_t handle, unsigned long long begin_time, unsigned long long end_time,
-                                ago_av_data_type_e audio_type, ago_av_data_type_e video_type, unsigned long long *record_id);
+int agora_iot_cloud_record_start(agora_iot_handle_t handle, unsigned long long begin_time,
+                                ago_av_data_type_e audio_type, ago_av_data_type_e video_type);
 
 /**
  * @brief Stop to push the video and audio frame to OSS.
@@ -557,7 +555,7 @@ int agora_iot_cloud_record_start(agora_iot_handle_t handle, unsigned long long b
  * - = 0: Success
  * - < 0: Failure
  */
-int agora_iot_cloud_record_stop(agora_iot_handle_t handle, unsigned long long record_id, unsigned long long end_time);
+int agora_iot_cloud_record_stop(agora_iot_handle_t handle, unsigned long long end_time);
 
 #ifdef __cplusplus
 }

@@ -48,17 +48,6 @@
 
 #define TAG "DOORBELL_DP"
 
-static const char *certificate_for_test = "eyJzaWduIjoiZkppajRhWVdYeWUvU3I1MnlsRlk3NjRHSUN3UFpPenlnNzRHR2cyWSs2d"
-                                          "XFyTkFOc0hPbmJaSWpFM2dxV0Y2dlpTKzhWbmhUU25MMUx0dkFjRXBqUnVaUzBYV2U4bj"
-                                          "ZiWFA1Y3AzU1ljV1g4eVdiNFVPcktGU3VmL2MyME1BVlhINzM0OVdqYVprc3ZmeHgrWGV"
-                                          "2b1dpb2hZNnF2dWRrZk9pTE9UaU0vWnFFZERTSVZ0RE40ZklFdmpTTmNYSU5GTG1XRFdt"
-                                          "eExFcTRObmNNcm1STWR3U1RDRDZXamZqMVErZ0x2VTRrdllVWTJPd3plNGp4TitVQ1ZhY"
-                                          "VRsenBNTm9kN0doUVFPcmRGUVk5dDc1SHFLT3ZFelpzM0VaK0VPSTJ4NXNhQmM1S3dJYX"
-                                          "ZQMDlNMWxTUzRXWG8xcmE3UTQzbkthRWJRMmkreUR1ZHdXSzZKcWVnPT0iLCJjdXN0b20"
-                                          "iOiIyMDIyLTA0LTE5VDIyOjQ2OjA3KzA4OjAwIiwiY3JlZGVudGlhbCI6IjRhNWZhMmVl"
-                                          "ZGRkMmIyYzljN2M0MTk5YWFkNDgyMDViOWIwYzliYjE5ZWFlZmRlYTQ5OTZhYTk5ZjZkZ"
-                                          "DkyNTIiLCJkdWUiOiIyMDIyMDcxOCJ9";
-
 static char g_device_id[32] = { 0 };
 
 #define STATE_FILE_SIZE_MAX (1024 * 16)
@@ -468,4 +457,68 @@ void update_device_low_power(agora_iot_handle_t handle)
   dp_info.dp_type         = AGORA_DP_TYPE_ENUM;
   dp_info.dp_value.dp_int = 1;
   agora_iot_dp_publish(handle, &dp_info);
+}
+
+unsigned long long start_alarm_record(agora_iot_handle_t handle)
+{
+  int ret           = -1;
+  struct timeval tv = { 0 };
+
+  // Step 1: Start recording
+  if (gettimeofday (&tv, NULL) < 0) {
+    printf("#### query system time failure\n");
+    return -1;
+  }
+  // begin time is necessary, and end time can be estimated to avoid record stop failure
+  unsigned long long begin_time = (unsigned long long)((uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000);
+  ret = agora_iot_cloud_record_start(handle, begin_time, SEND_AUDIO_DATA_TYPE, SEND_VIDEO_DATA_TYPE);
+  if (0 != ret) {
+    printf("#### start recording failure: %d\n", ret);
+    return ret;
+  }
+
+  return 0;
+}
+
+int stop_alarm_record(agora_iot_handle_t handle)
+{
+  struct timeval tv;
+  if (gettimeofday (&tv, NULL) < 0) {
+    printf("#### query system time failure\n");
+    return -1;
+  }
+
+  unsigned long long end_time = (unsigned long long)((uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000);
+  return agora_iot_cloud_record_stop(handle, end_time);
+}
+
+int alarm_message_send(agora_iot_handle_t handle, agora_iot_file_info_t file_info, char *nick_name, agora_iot_alarm_type_e alarm_type, char *alarm_desc)
+{
+  int ret = 0;
+  char *image_id = NULL;
+
+  ret = agora_iot_push_alarm_image(handle, &file_info, &image_id);
+  if (ret < 0) {
+    printf("#### agora_iot_push_alarm_image failure %d\n", ret);
+    return ret;
+  }
+
+  struct timeval tv;
+  if (gettimeofday (&tv, NULL) < 0) {
+    printf("#### query system time failure %d\n", ret);
+    return -1;
+  }
+
+  unsigned long long begin_time = (unsigned long long)((uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000);
+  ret = agora_iot_push_alarm_message(handle, begin_time, nick_name, alarm_type, alarm_desc, image_id);
+  if (0 != ret) {
+    printf("#### alarm failure: %d\n", ret);
+    return ret;
+  }
+
+  if (image_id) {
+    free(image_id);
+  }
+
+  return 0;
 }

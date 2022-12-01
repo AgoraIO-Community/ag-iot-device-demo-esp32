@@ -28,7 +28,7 @@ extern "C" {
 #endif
 
 #define SEND_AUDIO_DATA_TYPE (10) // 10 for PCM, 13 for G711U
-#define SEND_VIDEO_DATA_TYPE (1)  // 1 for H264 and 2 for JPEG, 3 for H265
+#define SEND_VIDEO_DATA_TYPE (2)  // 1 for H264 and 2 for JPEG, 3 for H265
 
 
 typedef enum {
@@ -52,6 +52,12 @@ int activate_device(device_handle_t dev_state);
 int update_device_work_state(agora_iot_handle_t handle, sys_up_mode_e mode);
 
 void update_device_low_power(agora_iot_handle_t handle);
+
+unsigned long long start_alarm_record(agora_iot_handle_t handle);
+
+int stop_alarm_record(agora_iot_handle_t handle);
+
+int alarm_message_send(agora_iot_handle_t handle, agora_iot_file_info_t file_info, char *nick_name, agora_iot_alarm_type_e alarm_type, char *alarm_desc);
 
 #ifdef __cplusplus
 }

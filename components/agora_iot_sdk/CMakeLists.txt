@@ -19,6 +19,11 @@ add_prebuilt_library(iot_utility "${CMAKE_CURRENT_SOURCE_DIR}/lib/${idf_target}/
 add_prebuilt_library(agora_webclient "${CMAKE_CURRENT_SOURCE_DIR}/lib/${idf_target}/libagora-webclient.a")
 add_prebuilt_library(iot_license "${CMAKE_CURRENT_SOURCE_DIR}/lib/${idf_target}/libiot-license.a")
 add_prebuilt_library(license_active "${CMAKE_CURRENT_SOURCE_DIR}/lib/${idf_target}/liblicense-active.a")
+add_prebuilt_library(iot-audio-codec "${CMAKE_CURRENT_SOURCE_DIR}/lib/${idf_target}/libiot-audio-codec.a")
+add_prebuilt_library(agora-oss-record "${CMAKE_CURRENT_SOURCE_DIR}/lib/${idf_target}/libagora-oss-record.a")
+add_prebuilt_library(ts-muxer "${CMAKE_CURRENT_SOURCE_DIR}/lib/${idf_target}/libts-muxer.a")
+add_prebuilt_library(oss-sdk "${CMAKE_CURRENT_SOURCE_DIR}/lib/${idf_target}/liboss-sdk.a")
 
 target_link_libraries(${COMPONENT_TARGET} INTERFACE agora_iot_solution agora_callkit agora_aws_shadow media_engine rtsa ahpl
-	cjson http_parser iot_utility agora_webclient agora_mbedtls iot_license license_active)
+	cjson http_parser iot_utility agora_webclient agora_mbedtls iot_license license_active iot-audio-codec agora-oss-record
+        ts-muxer oss-sdk)
