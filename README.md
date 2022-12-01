@@ -163,8 +163,6 @@ esptool.py --chip esp32s3 \
 
 #define CONFIG_CUSTOMER_SECRET "492c1****************************e802"
 
-#define CONFIG_USER_ID "6875*********3440" 
-
 #define CONFIG_MASTER_SERVER_URL "https://app.agoralink-iot-cn.sd-rtn.com"
 
 #define CONFIG_SLAVE_SERVER_URL "https://api.agora.io/agoralink/cn/api"
