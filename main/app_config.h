@@ -1,11 +1,9 @@
 #pragma once
 
-#define CONFIG_AGORA_APP_ID "4b31fcxxxxxxxxxxxxxxxxxxxx3037" // Please replace with your own APP ID
-
-#define CONFIG_CUSTOMER_KEY "8620fxxxxxxxxxxxxx07363"
-#define CONFIG_CUSTOMER_SECRET "492c1xxxxxxxxxxxxxxxxxxxx7e802"
-
-#define CONFIG_LICENSE_PID "00F8D46xxxxxxxxxxxxxxx22646"
+#define CONFIG_AGORA_APP_ID "4b31fcXXXXXXXXXXXXX3037" // Please replace with your own APP ID
+#define CONFIG_CUSTOMER_KEY "8620fdXXXXXXXXXXX7363"
+#define CONFIG_CUSTOMER_SECRET "492c1XXXXXXXXXe802"
+#define CONFIG_LICENSE_PID "00F8DXXXXXXXXXX2646"
 
 // Agora Master Server URL
 #define CONFIG_MASTER_SERVER_URL "https://app.agoralink-iot-cn.sd-rtn.com"
@@ -14,9 +12,7 @@
 #define CONFIG_SLAVE_SERVER_URL "https://api.agora.io/agoralink/cn/api"
 
 // Found product key form device manager platform
-#define CONFIG_PRODUCT_KEY "EJIJExxxxxx5lI4"
-
-#define CONFIG_USER_ID "73177xxxxxxx3024"// Please replace with your own user ID
+#define CONFIG_PRODUCT_KEY "EJIJXXXXXXXXlI4"
 
 // Device cert file size max
 #define CERT_BUF_SIZE_MAX (1024 * 2)
@@ -57,21 +53,14 @@ rqXRfboQnoZsG4q5WTP468SQvvG5\r\n\
 #define NVS_STORAGE
 // #define CONFIG_SDCARD
 
-#define FRAMESIZE (0) // 0 for QVGA and 1 for HVGA, 2 for VGA
-
-#if (FRAMESIZE == 0)
-#define CONFIG_FRAME_SIZE (FRAMESIZE_QVGA)
-#define CONFIG_FRAME_WIDTH 320
-#define CONFIG_FRAME_HIGH 240
-#elif (FRAMESIZE == 1)
-#define CONFIG_FRAME_SIZE (FRAMESIZE_HVGA)
-#define CONFIG_FRAME_WIDTH 480
-#define CONFIG_FRAME_HIGH 320
+// #define CONFIG_LCD_DISPLAY
+#ifdef CONFIG_LCD_DISPLAY
+// #define CONFIG_RTC_DISPLAY    /* display remote frame */
+#define FRAMESIZE (0) /* 0 for QVGA and 1 for HVGA, 2 for VGA */
 #else
-#define CONFIG_FRAME_SIZE (FRAMESIZE_VGA)
-#define CONFIG_FRAME_WIDTH 640
-#define CONFIG_FRAME_HIGH 480
+#define FRAMESIZE (1) /* 0 for QVGA and 1 for HVGA, 2 for VGA */
 #endif
+
 
 // Device Firmware version
 #define CONFIG_FM_WIFI_VER "1.0.0"
@@ -84,4 +73,4 @@ rqXRfboQnoZsG4q5WTP468SQvvG5\r\n\
 // 2 for deep sleep
 #define CONFIG_ENABLE_DEEP_SLEEP    2
 
-#define LOWER_POWER_MODE   (CONFIG_ENABLE_DEEP_SLEEP)
+#define LOWER_POWER_MODE   (CONFIG_NO_SLEEP)
