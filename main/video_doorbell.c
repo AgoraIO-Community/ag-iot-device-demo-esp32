@@ -67,6 +67,8 @@
 #include "esp_jpeg_enc.h"
 #endif
 #include "cJSON.h"
+#include <time.h>
+#include "esp_sntp.h"
 
 static const char *TAG = "Agora";
 
@@ -95,12 +97,12 @@ static const char *TAG = "Agora";
 
 #define CONFIG_CONTENT_LEN   256
 
-
 typedef struct {
   bool b_wifi_connected;
   bool b_call_session_started;
   bool b_exit;
   sys_up_mode_e up_mode;
+  bool b_sntp_synced;
 
   uint32_t total_target_send_bps;
   uint32_t video_send_target_video_frame_rate;
@@ -113,6 +115,7 @@ static app_t g_app = {
     .b_wifi_connected       = false,
     .b_exit                 = false,
     .up_mode                = SYS_UP_MODE_POWERON,
+    .b_sntp_synced          = false,
     .video_capture_fps      = BASE_VIDEO_FPS,
     .video_latest_2_second_send_bps = BWE_MIN_BPS,
     .video_send_target_video_frame_rate = BASE_VIDEO_FPS,
@@ -411,14 +414,26 @@ static esp_err_t input_key_service_cb(periph_service_handle_t handle, periph_ser
       ESP_LOGW(TAG, "Erase the nvs flash %d...", ret);
     } break;
     case INPUT_KEY_USER_ID_MUTE: {
+      if (g_app.b_sntp_synced == false) {
+        ESP_LOGW(TAG, "wait for time sync...");
+        break;
+      }
+
+      struct timeval tv;
+      if (gettimeofday (&tv, NULL) < 0) {
+        printf("#### query system time failure\n");
+        break;
+      }
+      unsigned long long begin_time = (unsigned long long)((uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000);
+
       agora_iot_file_info_t file_info = {
         .name_suffix  = "jpeg",
         .buf          = NULL,
         .size         = 0
       };
-      alarm_message_send(g_handle, file_info, "nick_esp32", AG_ALARM_TYPE_MOD, "This is a alarm test");
-      int ret = start_alarm_record(g_handle);
-      ESP_LOGW(TAG, "start_alarm_record %d...", ret);
+      alarm_message_send(g_handle, begin_time, file_info, "nick_esp32", AG_ALARM_TYPE_MOD, "This is a alarm test");
+      int ret = start_alarm_record(g_handle, begin_time);
+      ESP_LOGI(TAG, "start_alarm_record ret %d...", ret);
     } break;
     case INPUT_KEY_USER_ID_PLAY: {
       int ret = stop_alarm_record(g_handle);
@@ -772,6 +787,9 @@ static void video_capture_and_send_task(void *args)
     xSemaphoreTake(g_video_capture_sem, portMAX_DELAY);
 
     while (g_app.b_call_session_started) {
+      // send_video_frame(jpg_pic_001, 5775);
+      // vTaskDelay(200 / portTICK_PERIOD_MS);
+      // continue;
       camera_fb_t *pic = esp_camera_fb_get();
 
 #ifndef UVC_STREAM_ENABLE
@@ -1223,6 +1241,20 @@ extern void setup_wifi_with_block(char *cfg);
 #endif // CONFIG_BLUFI_ENABLE
 }
 
+static void time_sync_notification_cb(struct timeval *tv)
+{
+  ESP_LOGI(TAG, "Notification of a time synchronization event");
+  g_app.b_sntp_synced = true;
+}
+
+static void sntp_set_sync(void)
+{
+  sntp_setoperatingmode(SNTP_OPMODE_POLL);
+  sntp_setservername(0, "ntp.ntsc.ac.cn");
+  sntp_set_time_sync_notification_cb(time_sync_notification_cb);
+  sntp_init();
+}
+
 static device_handle_t agora_device_bringup(sys_up_mode_e mode)
 {
   char *ssid    = NULL;
@@ -1272,6 +1304,8 @@ static device_handle_t agora_device_bringup(sys_up_mode_e mode)
       vTaskDelay(10 / portTICK_PERIOD_MS);
     }
   }
+
+  sntp_set_sync();
 
   if (0 != device_get_item_string(dev_state, "product_key", &product_key)) {
     ESP_LOGE(TAG, "cannot found product_key in device state items\n");
@@ -1462,7 +1496,6 @@ static void deep_sleep_set_and_start(void)
     esp_deep_sleep_start();
 }
 #endif
-
 
 int app_main(void)
 {

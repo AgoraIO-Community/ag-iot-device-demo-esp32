@@ -63,7 +63,7 @@
 
 乐鑫ESP物联网开发框架（ESP-IDF）。安装方法详见 官方文档(https://docs.espressif.com/projects/esp-idf/zh_CN/latest/esp32/get-started/index.html#id8)。
 
-本例程支持 IDF release/v[4.4] 及以后的分支，例程默认使用 IDF release/v[4.4] 分支（commit id: 00396a9d495514986fd4fbfbd51e60fc8e4960e3
+本例程支持 IDF release/v[4.4] 及以后的分支，例程默认使用 IDF release/v[4.4] 分支（commit id: 00396a9d495514986fd4fbfbd51e60fc8e4960e3)
 
 选择 IDF 分支的方法，如下所示：
 

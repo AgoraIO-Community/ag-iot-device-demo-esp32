@@ -53,11 +53,11 @@ int update_device_work_state(agora_iot_handle_t handle, sys_up_mode_e mode);
 
 void update_device_low_power(agora_iot_handle_t handle);
 
-int start_alarm_record(agora_iot_handle_t handle);
+int start_alarm_record(agora_iot_handle_t handle, unsigned long long begin_time);
 
 int stop_alarm_record(agora_iot_handle_t handle);
 
-int alarm_message_send(agora_iot_handle_t handle, agora_iot_file_info_t file_info, char *nick_name, agora_iot_alarm_type_e alarm_type, char *alarm_desc);
+int alarm_message_send(agora_iot_handle_t handle, unsigned long long begin_time, agora_iot_file_info_t file_info, char *nick_name, agora_iot_alarm_type_e alarm_type, char *alarm_desc);
 
 #ifdef __cplusplus
 }

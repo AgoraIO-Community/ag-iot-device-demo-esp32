@@ -28,6 +28,7 @@
 #include <string.h>
 #include <malloc.h>
 
+#include <time.h>
 #include <sys/time.h>
 
 #include "agora_iot_api.h"
@@ -460,19 +461,9 @@ void update_device_low_power(agora_iot_handle_t handle)
   agora_iot_dp_publish(handle, &dp_info);
 }
 
-int start_alarm_record(agora_iot_handle_t handle)
+int start_alarm_record(agora_iot_handle_t handle, unsigned long long begin_time)
 {
-  int ret           = -1;
-  struct timeval tv = { 0 };
-
-  // Step 1: Start recording
-  if (gettimeofday (&tv, NULL) < 0) {
-    printf("#### query system time failure\n");
-    return -1;
-  }
-  // begin time is necessary, and end time can be estimated to avoid record stop failure
-  unsigned long long begin_time = (unsigned long long)((uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000);
-  ret = agora_iot_cloud_record_start(handle, begin_time, SEND_AUDIO_DATA_TYPE, SEND_VIDEO_DATA_TYPE);
+  int ret = agora_iot_cloud_record_start(handle, begin_time, SEND_AUDIO_DATA_TYPE, SEND_VIDEO_DATA_TYPE);
   if (0 != ret) {
     printf("#### start recording failure: %d\n", ret);
     return ret;
@@ -493,7 +484,7 @@ int stop_alarm_record(agora_iot_handle_t handle)
   return agora_iot_cloud_record_stop(handle, end_time);
 }
 
-int alarm_message_send(agora_iot_handle_t handle, agora_iot_file_info_t file_info, char *nick_name, agora_iot_alarm_type_e alarm_type, char *alarm_desc)
+int alarm_message_send(agora_iot_handle_t handle, unsigned long long begin_time, agora_iot_file_info_t file_info, char *nick_name, agora_iot_alarm_type_e alarm_type, char *alarm_desc)
 {
   int ret = 0;
   char *image_id = NULL;
@@ -509,13 +500,6 @@ int alarm_message_send(agora_iot_handle_t handle, agora_iot_file_info_t file_inf
     strncpy(image_id, "alarm_message_rand", 32);
   }
 
-  struct timeval tv;
-  if (gettimeofday (&tv, NULL) < 0) {
-    printf("#### query system time failure %d\n", ret);
-    return -1;
-  }
-
-  unsigned long long begin_time = (unsigned long long)((uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000);
   ret = agora_iot_push_alarm_message(handle, begin_time, nick_name, alarm_type, alarm_desc, image_id);
   if (0 != ret) {
     printf("#### alarm failure: %d\n", ret);
