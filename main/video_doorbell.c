@@ -381,19 +381,43 @@ static esp_err_t input_key_service_cb(periph_service_handle_t handle, periph_ser
   if (evt->type == INPUT_KEY_SERVICE_ACTION_CLICK) {
     switch ((int)evt->data) {
     case INPUT_KEY_USER_ID_REC: {
+      char *product_key  = NULL;
       char *user_account = NULL;
       if (g_handle == NULL) {
-        return ESP_FAIL;
+        goto err;
       }
-      if (0 != device_get_item_string(dev_state, "bind_user", &user_account)) {
-        ESP_LOGE(TAG, "cannot found user_id from device state.\n");
-        return ESP_FAIL;
+      int rval = device_get_item_string(dev_state, "product_key", &product_key);
+      if (0 != rval) {
+        ESP_LOGE(TAG, "device_get_item_string product_key failed\n");
+        goto err;
       }
 
-      ESP_LOGW(TAG, "Now ring the bell and call user %s ...\n", user_account);
-      agora_iot_call(g_handle, user_account, "I'm the guest");
+      user_account = heap_caps_malloc(64, MALLOC_CAP_SPIRAM);
+      if (user_account == NULL) {
+        ESP_LOGE(TAG, "user_account malloc failed\n");
+        goto err;
+      }
+
+      rval = agora_iot_query_user(CONFIG_MASTER_SERVER_URL, product_key, get_device_id(), user_account, AGORA_IOT_CLIENT_ID_MAX_LEN);
+      if (0 != rval) {
+        ESP_LOGE(TAG, "query device manager user failed\n");
+        goto err;
+      }
+
+      if (0 == strlen(user_account)) {
+        goto err;
+      }
+
+      rval = agora_iot_call(g_handle, user_account, "I'm the guest");
+      if (rval == ERR_AG_CALL_SUCCESS) {
+        ESP_LOGW(TAG, "Now ring the bell and call user %s ...\n", user_account);
+      }
+  err:
       if (user_account) {
         free(user_account);
+      }
+      if (product_key) {
+        free(product_key);
       }
     } break;
     case INPUT_KEY_USER_ID_VOLUP:
@@ -621,7 +645,7 @@ static void setup_audio(void)
 {
   audio_board_handle_t board_handle = audio_board_init();
   audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
-  audio_hal_set_volume(board_handle->audio_hal, 75);
+  audio_hal_set_volume(board_handle->audio_hal, 100);
 
 #ifdef CONFIG_ESP32_S3_KORVO2_V3_BOARD
   es7210_mic_select(ES7210_INPUT_MIC1 | ES7210_INPUT_MIC2 | ES7210_INPUT_MIC3 | ES7210_INPUT_MIC4);
