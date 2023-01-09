@@ -604,6 +604,17 @@ static esp_err_t recorder_pipeline_open(void)
   return ESP_OK;
 }
 
+static esp_err_t recorder_pipeline_close(void)
+{
+  audio_pipeline_stop(recorder);
+  audio_pipeline_wait_for_stop(recorder);
+  // audio_pipeline_terminate(recorder);
+  // audio_pipeline_unlink(recorder);
+  audio_pipeline_deinit(recorder);
+
+  return ESP_OK;
+}
+
 static esp_err_t player_pipeline_open()
 {
   audio_element_handle_t i2s_stream_writer;
@@ -849,20 +860,20 @@ static void video_capture_and_send_task(void *args)
 
 static int send_audio_frame(uint8_t *data, uint32_t len)
 {
-    int rval = -1;
+  int rval = -1;
 
-    // API: send audio data
-    ago_audio_frame_t ago_frame = { 0 };
-    ago_frame.data_type         = AGO_AUDIO_DATA_TYPE_PCM;
-    ago_frame.audio_buffer      = data;
-    ago_frame.audio_buffer_size = len;
-    rval = agora_iot_push_audio_frame(g_handle, &ago_frame, g_push_type);
-    if (rval < 0) {
-        ESP_LOGE(TAG, "Failed to push audio frame");
-        return -1;
-    }
+  // API: send audio data
+  ago_audio_frame_t ago_frame = { 0 };
+  ago_frame.data_type         = AGO_AUDIO_DATA_TYPE_PCM;
+  ago_frame.audio_buffer      = data;
+  ago_frame.audio_buffer_size = len;
+  rval = agora_iot_push_audio_frame(g_handle, &ago_frame, g_push_type);
+  if (rval < 0) {
+    ESP_LOGE(TAG, "Failed to push audio frame");
+    return -1;
+  }
 
-    return 0;
+  return 0;
 }
 
 static void audio_capture_and_send_task(void *threadid)
@@ -876,14 +887,15 @@ static void audio_capture_and_send_task(void *threadid)
     return;
   }
 
+  player_pipeline_open();
+  audio_pipeline_run(player);
+
   while (1) {
     recorder_pipeline_open();
-    player_pipeline_open();
 
     xSemaphoreTake(g_audio_capture_sem, portMAX_DELAY);
 
     audio_pipeline_run(recorder);
-    audio_pipeline_run(player);
 
     while (g_app.b_call_session_started) {
       ret = raw_stream_read(raw_read, (char *)pcm_buf, read_len);
@@ -894,14 +906,14 @@ static void audio_capture_and_send_task(void *threadid)
     }
 
     //deinit
-    audio_pipeline_stop(recorder);
-    audio_pipeline_wait_for_stop(recorder);
-    audio_pipeline_terminate(recorder);
+    recorder_pipeline_close();
 
-    audio_pipeline_stop(player);
-    audio_pipeline_wait_for_stop(player);
-    audio_pipeline_terminate(player);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
+
+  audio_pipeline_stop(player);
+  audio_pipeline_wait_for_stop(player);
+  audio_pipeline_deinit(player);
 
   free(pcm_buf);
   vTaskDelete(NULL);
