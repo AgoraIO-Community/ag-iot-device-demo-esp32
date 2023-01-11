@@ -100,6 +100,7 @@ static const char *TAG = "Agora";
 typedef struct {
   bool b_wifi_connected;
   bool b_call_session_started;
+  bool b_oss_session_started;
   bool b_exit;
   sys_up_mode_e up_mode;
   bool b_sntp_synced;
@@ -112,6 +113,7 @@ typedef struct {
 
 static app_t g_app = {
     .b_call_session_started = false,
+    .b_oss_session_started  = false,
     .b_wifi_connected       = false,
     .b_exit                 = false,
     .up_mode                = SYS_UP_MODE_POWERON,
@@ -359,7 +361,7 @@ static void set_es7210_tdm_mode(void)
 
 static void fps_timer_callback(void *arg)
 {
-  if (g_app.b_call_session_started && image_cnt) {
+  if ((g_app.b_call_session_started || g_app.b_oss_session_started) && image_cnt) {
     uint32_t cur_tick = xTaskGetTickCount();
     uint32_t duration = cur_tick - tick_begin;
 
@@ -821,10 +823,7 @@ static void video_capture_and_send_task(void *args)
   while (1) {
     xSemaphoreTake(g_video_capture_sem, portMAX_DELAY);
 
-    while (g_app.b_call_session_started) {
-      // send_video_frame(jpg_pic_001, 5775);
-      // vTaskDelay(200 / portTICK_PERIOD_MS);
-      // continue;
+    while (g_app.b_call_session_started || g_app.b_oss_session_started) {
       camera_fb_t *pic = esp_camera_fb_get();
 
 #ifndef UVC_STREAM_ENABLE
@@ -897,7 +896,7 @@ static void audio_capture_and_send_task(void *threadid)
 
     audio_pipeline_run(recorder);
 
-    while (g_app.b_call_session_started) {
+    while (g_app.b_call_session_started || g_app.b_oss_session_started) {
       ret = raw_stream_read(raw_read, (char *)pcm_buf, read_len);
       if (ret != read_len) {
         ESP_LOGW(TAG, "write error, expect %d, but only %d", read_len, ret);
@@ -961,34 +960,50 @@ static void iot_cb_call_request(const char *peer_name, const char *attach_msg)
 
 static void iot_cb_start_push_frame(uint8_t push_type)
 {
-  ESP_LOGI(TAG, "Start push audio/video frames");
-  g_app.b_call_session_started = true;
+  ESP_LOGI(TAG, "Start push audio/video frames: push_type %x", push_type);
+  if ((push_type & AGO_AV_PUSH_TYPE_MASK_RTC) == AGO_AV_PUSH_TYPE_MASK_RTC) {
+    g_app.b_call_session_started = true;
+  }
 
-  // record push type
-  g_push_type |= push_type;
+  if ((push_type & AGO_AV_PUSH_TYPE_MASK_OSS) == AGO_AV_PUSH_TYPE_MASK_OSS) {
+    g_app.b_oss_session_started  = true;
+  }
 
+  if (g_push_type == 0) {
 #ifdef UVC_STREAM_ENABLE
-  uvc_streaming_resume();
+    uvc_streaming_resume();
 #endif //#ifdef UVC_STREAM_ENABLE
 
 #ifndef CONFIG_AUDIO_ONLY
-  xSemaphoreGive(g_video_capture_sem);
+    xSemaphoreGive(g_video_capture_sem);
 #endif
 
-  xSemaphoreGive(g_audio_capture_sem);
+    xSemaphoreGive(g_audio_capture_sem);
+  }
+
+  // record push type
+  g_push_type |= push_type;
 }
 
 static void iot_cb_stop_push_frame(uint8_t push_type)
 {
-  ESP_LOGI(TAG, "Stop push audio/video frames");
-  g_app.b_call_session_started = false;
+  ESP_LOGI(TAG, "Stop push audio/video frames: push_type %x", push_type);
+  if ((push_type & AGO_AV_PUSH_TYPE_MASK_RTC) == AGO_AV_PUSH_TYPE_MASK_RTC) {
+    g_app.b_call_session_started = false;
+  }
+
+  if ((push_type & AGO_AV_PUSH_TYPE_MASK_OSS) == AGO_AV_PUSH_TYPE_MASK_OSS) {
+    g_app.b_oss_session_started = false;
+  }
 
   // record push type
   g_push_type &= ~push_type;
 
+  if (g_push_type == 0) {
 #ifdef UVC_STREAM_ENABLE
-  uvc_streaming_suspend();
+    uvc_streaming_suspend();
 #endif
+  }
 }
 
 static void iot_cb_call_hung_up(const char *peer_name)
