@@ -69,6 +69,7 @@
 #include "cJSON.h"
 #include <time.h>
 #include "esp_sntp.h"
+#include "ringbuf.h"
 
 static const char *TAG = "Agora";
 
@@ -96,6 +97,8 @@ static const char *TAG = "Agora";
 #define BASE_VIDEO_FPS 10
 
 #define CONFIG_CONTENT_LEN   256
+
+#define CONFIG_AUDIO_PLAY_BUF_LEN   CONFIG_PCM_DATA_LEN * 20
 
 typedef struct {
   bool b_wifi_connected;
@@ -270,6 +273,10 @@ static audio_thread_t *g_audio_thread;
 #ifndef CONFIG_BLUFI_ENABLE
 static QueueHandle_t    g_qr_queue;
 #endif
+
+static audio_thread_t *g_audio_play_thread;
+static RingbufHandle_t g_audio_play_ringbuf = NULL;  /* handle of ringbuffer for audio play */
+
 
 static uint8_t g_push_type = 0x00;
 
@@ -918,6 +925,26 @@ static void audio_capture_and_send_task(void *threadid)
   vTaskDelete(NULL);
 }
 
+static void audio_play_task(void *args)
+{
+  size_t size = 0;
+
+  while (g_app.b_call_session_started) {
+    char *buf = (char *)xRingbufferReceive(g_audio_play_ringbuf, &size, 20 / portTICK_PERIOD_MS);
+
+    if (buf) {
+      raw_stream_write(raw_write, buf, size);
+      vTaskDelay(20 / portTICK_PERIOD_MS);
+      vRingbufferReturnItem(g_audio_play_ringbuf, buf);
+    }
+  }
+
+  vRingbufferDelete(g_audio_play_ringbuf);
+  g_audio_play_ringbuf = NULL;
+
+  vTaskDelete(NULL);
+}
+
 static void create_capture_task(void)
 {
   esp_err_t rval = ESP_FAIL;
@@ -963,6 +990,13 @@ static void iot_cb_start_push_frame(uint8_t push_type)
   ESP_LOGI(TAG, "Start push audio/video frames: push_type %x", push_type);
   if ((push_type & AGO_AV_PUSH_TYPE_MASK_RTC) == AGO_AV_PUSH_TYPE_MASK_RTC) {
     g_app.b_call_session_started = true;
+
+    g_audio_play_ringbuf = xRingbufferCreate(CONFIG_AUDIO_PLAY_BUF_LEN, RINGBUF_TYPE_BYTEBUF);
+    esp_err_t rval = audio_thread_create(g_audio_play_thread, "audio_play_task", audio_play_task, NULL, 2 * 1024, PRIO_TASK_FETCH, true, 0);
+    if (rval != ESP_OK) {
+      ESP_LOGE(TAG, "Unable to create audio play thread!");
+      return;
+    }
   }
 
   if ((push_type & AGO_AV_PUSH_TYPE_MASK_OSS) == AGO_AV_PUSH_TYPE_MASK_OSS) {
@@ -1033,7 +1067,10 @@ static void iot_cb_receive_video_frame(ago_video_frame_t *frame)
 
 static void iot_cb_receive_audio_frame(ago_audio_frame_t *frame)
 {
-  raw_stream_write(raw_write, (char *)frame->audio_buffer, frame->audio_buffer_size);
+  if (frame->audio_buffer_size > xRingbufferGetCurFreeSize(g_audio_play_ringbuf)) {
+    printf("recv audio frame not enough buff, free size: %d\n", xRingbufferGetCurFreeSize(g_audio_play_ringbuf));
+  }
+  xRingbufferSend(g_audio_play_ringbuf, frame->audio_buffer, frame->audio_buffer_size, 0);
 }
 
 static void iot_cb_target_bitrate_changed(uint32_t target_bps)
