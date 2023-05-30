@@ -55,8 +55,6 @@
 #include "input_key_service.h"
 #include "nvs_flash.h"
 #include "raw_stream.h"
-#include "quirc.h"
-#include "convert.h"
 #include "esp_sleep.h"
 #include "driver/rtc_io.h"
 #include "audio_thread.h"
@@ -70,6 +68,12 @@
 #include <time.h>
 #include "esp_sntp.h"
 #include "ringbuf.h"
+#ifndef CONFIG_BLUFI_ENABLE
+#include "quirc.h"
+#include "convert.h"
+
+static QueueHandle_t    g_qr_queue;
+#endif
 
 static const char *TAG = "Agora";
 
@@ -98,7 +102,7 @@ static const char *TAG = "Agora";
 
 #define CONFIG_CONTENT_LEN   256
 
-#define CONFIG_AUDIO_PLAY_BUF_LEN   CONFIG_PCM_DATA_LEN * 20
+#define CONFIG_AUDIO_PLAY_BUF_LEN   CONFIG_PCM_DATA_LEN * 40
 
 typedef struct {
   bool b_wifi_connected;
@@ -246,7 +250,7 @@ static camera_config_t camera_config = {
   // when not JPEG
 
   .jpeg_quality = 12, // 0-63 lower number means higher quality
-  .fb_count     = 1, // if more than one, i2s runs in continuous mode. Use only with JPEG
+  .fb_count     = 2, // if more than one, i2s runs in continuous mode. Use only with JPEG
   .grab_mode    = CAMERA_GRAB_WHEN_EMPTY,
   // .conv_mode    = YUV422_TO_YUV420,
 };
@@ -257,7 +261,7 @@ static void *jpg_encoder;
 static agora_iot_handle_t g_handle = NULL;
 static device_handle_t dev_state = NULL;
 
-static uint32_t image_cnt = 0;
+static uint32_t image_cnt  = 0;
 static uint32_t tick_begin = 0;
 static esp_timer_handle_t fps_timer = NULL;
 
@@ -270,10 +274,7 @@ static audio_thread_t *g_video_thread;
 static SemaphoreHandle_t g_audio_capture_sem  = NULL;
 static audio_thread_t *g_audio_thread;
 
-#ifndef CONFIG_BLUFI_ENABLE
-static QueueHandle_t    g_qr_queue;
-#endif
-
+static SemaphoreHandle_t g_audio_play_sem  = NULL;
 static audio_thread_t *g_audio_play_thread;
 static RingbufHandle_t g_audio_play_ringbuf = NULL;  /* handle of ringbuffer for audio play */
 
@@ -436,13 +437,13 @@ static esp_err_t input_key_service_cb(periph_service_handle_t handle, periph_ser
 
       ESP_LOGW(TAG, "Hang up the call.");
       agora_iot_hang_up(g_handle);
-      g_app.b_call_session_started = false;
+      // g_app.b_call_session_started = false;
       break;
     case INPUT_KEY_USER_ID_VOLDOWN:
       ESP_LOGW(TAG, "Now exiting the app...");
       g_app.b_exit = true;
       break;
-    case INPUT_KEY_USER_ID_SET:{
+    case INPUT_KEY_USER_ID_SET: {
       esp_err_t ret = nvs_flash_erase_partition("nvs");
       ESP_LOGW(TAG, "Erase the nvs flash %d...", ret);
     } break;
@@ -613,17 +614,6 @@ static esp_err_t recorder_pipeline_open(void)
   return ESP_OK;
 }
 
-static esp_err_t recorder_pipeline_close(void)
-{
-  audio_pipeline_stop(recorder);
-  audio_pipeline_wait_for_stop(recorder);
-  // audio_pipeline_terminate(recorder);
-  // audio_pipeline_unlink(recorder);
-  audio_pipeline_deinit(recorder);
-
-  return ESP_OK;
-}
-
 static esp_err_t player_pipeline_open()
 {
   audio_element_handle_t i2s_stream_writer;
@@ -655,8 +645,17 @@ static esp_err_t player_pipeline_open()
 
   audio_pipeline_register(player, raw_write, "raw");
   audio_pipeline_register(player, i2s_stream_writer, "i2s");
-  const char *link_tag[3] = { "raw", "i2s" };
+  const char *link_tag[2] = { "raw", "i2s" };
   audio_pipeline_link(player, &link_tag[0], 2);
+
+  return ESP_OK;
+}
+
+static esp_err_t _pipeline_close(audio_pipeline_handle_t handle)
+{
+  audio_pipeline_stop(handle);
+  audio_pipeline_wait_for_stop(handle);
+  audio_pipeline_deinit(handle);
 
   return ESP_OK;
 }
@@ -807,6 +806,7 @@ static int send_video_frame(uint8_t *data, uint32_t len)
     ago_frame.is_key_frame      = true;
     ago_frame.video_buffer      = data;
     ago_frame.video_buffer_size = len;
+    ago_frame.fps               = 10;
     rval = agora_iot_push_video_frame(g_handle, &ago_frame, g_push_type);
     if (rval < 0) {
         ESP_LOGE(TAG, "Failed to push video frame");
@@ -893,14 +893,9 @@ static void audio_capture_and_send_task(void *threadid)
     return;
   }
 
-  player_pipeline_open();
-  audio_pipeline_run(player);
-
   while (1) {
     recorder_pipeline_open();
-
     xSemaphoreTake(g_audio_capture_sem, portMAX_DELAY);
-
     audio_pipeline_run(recorder);
 
     while (g_app.b_call_session_started || g_app.b_oss_session_started) {
@@ -912,14 +907,9 @@ static void audio_capture_and_send_task(void *threadid)
     }
 
     //deinit
-    recorder_pipeline_close();
-
+    _pipeline_close(recorder);
     vTaskDelay(100 / portTICK_PERIOD_MS);
   }
-
-  audio_pipeline_stop(player);
-  audio_pipeline_wait_for_stop(player);
-  audio_pipeline_deinit(player);
 
   free(pcm_buf);
   vTaskDelete(NULL);
@@ -929,19 +919,30 @@ static void audio_play_task(void *args)
 {
   size_t size = 0;
 
-  while (g_app.b_call_session_started) {
-    char *buf = (char *)xRingbufferReceive(g_audio_play_ringbuf, &size, 20 / portTICK_PERIOD_MS);
+  player_pipeline_open();
+  audio_pipeline_run(player);
 
-    if (buf) {
-      raw_stream_write(raw_write, buf, size);
-      vTaskDelay(20 / portTICK_PERIOD_MS);
-      vRingbufferReturnItem(g_audio_play_ringbuf, buf);
+  while(1) {
+    xSemaphoreTake(g_audio_play_sem, portMAX_DELAY);
+
+    while (g_app.b_call_session_started) {
+      char *buf = (char *)xRingbufferReceive(g_audio_play_ringbuf, &size, 20 / portTICK_PERIOD_MS);
+      // printf("audio play recv data len %d, ts %lld\r\n", size, esp_timer_get_time());
+      if (buf) {
+        raw_stream_write(raw_write, buf, size);
+        // vTaskDelay(20 / portTICK_PERIOD_MS);
+        vRingbufferReturnItem(g_audio_play_ringbuf, buf);
+      }
     }
+
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
+  _pipeline_close(player);
 
-  vRingbufferDelete(g_audio_play_ringbuf);
-  g_audio_play_ringbuf = NULL;
-
+  if (g_audio_play_ringbuf) {
+    vRingbufferDelete(g_audio_play_ringbuf);
+    g_audio_play_ringbuf = NULL;
+  }
   vTaskDelete(NULL);
 }
 
@@ -972,6 +973,18 @@ static void create_capture_task(void)
     ESP_LOGE(TAG, "Unable to create audio capture thread!");
     return;
   }
+
+  g_audio_play_sem = xSemaphoreCreateBinary();
+  if (NULL == g_audio_play_sem) {
+    ESP_LOGE(TAG, "Unable to create audio play semaphore!");
+    return;
+  }
+  g_audio_play_ringbuf = xRingbufferCreate(CONFIG_AUDIO_PLAY_BUF_LEN, RINGBUF_TYPE_BYTEBUF);
+  rval = audio_thread_create(g_audio_play_thread, "audio_play_task", audio_play_task, NULL, 4 * 1024, PRIO_TASK_FETCH + 2, true, 0);
+  if (rval != ESP_OK) {
+    ESP_LOGE(TAG, "Unable to create audio play thread!");
+    return;
+  }
 }
 
 static void iot_cb_call_request(const char *peer_name, const char *attach_msg)
@@ -990,13 +1003,7 @@ static void iot_cb_start_push_frame(uint8_t push_type)
   ESP_LOGI(TAG, "Start push audio/video frames: push_type %x", push_type);
   if ((push_type & AGO_AV_PUSH_TYPE_MASK_RTC) == AGO_AV_PUSH_TYPE_MASK_RTC) {
     g_app.b_call_session_started = true;
-
-    g_audio_play_ringbuf = xRingbufferCreate(CONFIG_AUDIO_PLAY_BUF_LEN, RINGBUF_TYPE_BYTEBUF);
-    esp_err_t rval = audio_thread_create(g_audio_play_thread, "audio_play_task", audio_play_task, NULL, 2 * 1024, PRIO_TASK_FETCH, true, 0);
-    if (rval != ESP_OK) {
-      ESP_LOGE(TAG, "Unable to create audio play thread!");
-      return;
-    }
+    xSemaphoreGive(g_audio_play_sem);
   }
 
   if ((push_type & AGO_AV_PUSH_TYPE_MASK_OSS) == AGO_AV_PUSH_TYPE_MASK_OSS) {
@@ -1004,11 +1011,11 @@ static void iot_cb_start_push_frame(uint8_t push_type)
   }
 
   if (g_push_type == 0) {
-#ifdef UVC_STREAM_ENABLE
-    uvc_streaming_resume();
-#endif //#ifdef UVC_STREAM_ENABLE
-
 #ifndef CONFIG_AUDIO_ONLY
+  #ifdef UVC_STREAM_ENABLE
+    uvc_streaming_resume();
+  #endif //#ifdef UVC_STREAM_ENABLE
+
     xSemaphoreGive(g_video_capture_sem);
 #endif
 
@@ -1034,8 +1041,10 @@ static void iot_cb_stop_push_frame(uint8_t push_type)
   g_push_type &= ~push_type;
 
   if (g_push_type == 0) {
-#ifdef UVC_STREAM_ENABLE
+#ifndef CONFIG_AUDIO_ONLY
+  #ifdef UVC_STREAM_ENABLE
     uvc_streaming_suspend();
+  #endif
 #endif
   }
 }
@@ -1067,8 +1076,10 @@ static void iot_cb_receive_video_frame(ago_video_frame_t *frame)
 
 static void iot_cb_receive_audio_frame(ago_audio_frame_t *frame)
 {
+  // printf("recv audio frame len %d, free size: %d\n", frame->audio_buffer_size, xRingbufferGetCurFreeSize(g_audio_play_ringbuf));
+
   if (frame->audio_buffer_size > xRingbufferGetCurFreeSize(g_audio_play_ringbuf)) {
-    printf("recv audio frame not enough buff, free size: %d\n", xRingbufferGetCurFreeSize(g_audio_play_ringbuf));
+    printf("recv audio frame not enough, free size: %d\n", xRingbufferGetCurFreeSize(g_audio_play_ringbuf));
   }
   xRingbufferSend(g_audio_play_ringbuf, frame->audio_buffer, frame->audio_buffer_size, 0);
 }
@@ -1452,6 +1463,7 @@ static agora_iot_handle_t connect_agora_iot_service(device_handle_t dev_state)
     ESP_LOGE(TAG, "cannot found dev_crt or dev_key or domain in device state items\n");
     goto agora_iot_err;
   }
+  ESP_LOGE(TAG, "connect_agora_iot_service 1st\n");
 
   if (0 != device_get_item_string(dev_state, "license", &license)) {
     ESP_LOGE(TAG, "cannot found license in device state items\n");
@@ -1462,7 +1474,7 @@ static agora_iot_handle_t connect_agora_iot_service(device_handle_t dev_state)
     ESP_LOGE(TAG, "cannot found product_key in device state items\n");
     goto agora_iot_err;
   }
-
+  ESP_LOGE(TAG, "connect_agora_iot_service 2nd\n");
   agora_iot_config_t cfg = {
     .app_id      = CONFIG_AGORA_APP_ID,
     .product_key = product_key,
@@ -1486,7 +1498,7 @@ static agora_iot_handle_t connect_agora_iot_service(device_handle_t dev_state)
       .cb_key_frame_requested    = iot_cb_key_frame_requested,
     },
     .disable_rtc_log      = true,
-    .log_level            = AGORA_LOG_INFO,
+    .log_level            = AGORA_LOG_WARNING,
     .max_possible_bitrate = BWE_MAX_BPS,
     .enable_audio_config  = true,
     .audio_config = {
@@ -1496,7 +1508,6 @@ static agora_iot_handle_t connect_agora_iot_service(device_handle_t dev_state)
       .pcm_channel_num  = I2S_CHANNELS,
 #endif
     },
-
     .slave_server_url = CONFIG_SLAVE_SERVER_URL,
     .call_mode        = CALL_MODE_MUTLI,
     .call_cb = {
@@ -1686,7 +1697,6 @@ int app_main(void)
     if (g_idle_loop_count++ < CONFIG_ENTER_DEEPSLEEP_THRESHOLD) {
         continue;
     }
-
     deep_sleep_set_and_start();
 #endif
   }
