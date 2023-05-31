@@ -509,7 +509,7 @@ int agora_iot_fw_info_update(agora_iot_handle_t handle, const agora_iot_device_f
  *
  * @param[in] handle   The reference when initialized
  * @param[in] peer_id  Peer RTM ID, come from "on_receive_rtm" usually
- * @param[in] msg_id   Identify the message sent
+ * @param[in] msg_id   Identify the message sent, cannot be 0 attention please
  * @param[in] msg      Message to send
  * @param[in] msg_len  Length of the message(max size: 1024 bytes)
  *

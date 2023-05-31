@@ -116,7 +116,8 @@ typedef struct agora_iot_call_callback {
   void (*cb_call_hung_up)(const char *peer_id);
 
   /**
-    * @brief Occurs when incoming call, but local do not answer or hung up.
+    * @brief Occurs when incoming call, but local do not answer or hung up. Or peer hang up in call state, and no more
+    * incoming call in the next few seconds, and there is no peer on this occasion.
     *
     * Local is a callee, peer is a caller.
     *

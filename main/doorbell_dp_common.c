@@ -364,6 +364,7 @@ int activate_device(device_handle_t dev_state)
 
   device_id = get_device_id();
 
+#ifdef LICENSE_PID_ACTIVE
   // 1. activate license
   if (0 != agora_iot_license_activate(CONFIG_AGORA_APP_ID, CONFIG_CUSTOMER_KEY, CONFIG_CUSTOMER_SECRET,
                                       CONFIG_PRODUCT_KEY, device_id, CONFIG_LICENSE_PID, &cert)) {
@@ -371,6 +372,7 @@ int activate_device(device_handle_t dev_state)
     goto activate_err;
   }
   device_set_item_string(dev_state, "license", cert);
+#endif
 
   // 2. register DP service
   if (0 != device_get_item_string(dev_state, "user_id", &user_id)) {

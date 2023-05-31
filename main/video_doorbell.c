@@ -834,12 +834,12 @@ static void video_capture_and_send_task(void *args)
       camera_fb_t *pic = esp_camera_fb_get();
 
 #ifndef UVC_STREAM_ENABLE
-      __calc_latest_2_sec_video_data_bps(image_len);
-      if (!__is_send_bps_adjust_need_skip_this_frame()) {
+      // __calc_latest_2_sec_video_data_bps(image_len);
+      // if (!__is_send_bps_adjust_need_skip_this_frame()) {
         image_cnt++;
         jpeg_enc_process(jpg_encoder, pic->buf, pic->len, image_buf, image_buf_len, &image_len);
         send_video_frame(image_buf, image_len);
-      }
+      // }
 #else
       __calc_latest_2_sec_video_data_bps(pic->len);
       if (!__is_send_bps_adjust_need_skip_this_frame()) {
@@ -1416,7 +1416,12 @@ static device_handle_t agora_device_bringup(sys_up_mode_e mode)
   if (SYS_UP_MODE_WAKEUP != mode) {
     // maybe nee to avtiate device if was not wakeup frome low-power mode
     if (SYS_UP_MODE_RESTORE == mode || 0 != agora_iot_query_user(CONFIG_MASTER_SERVER_URL, product_key, get_device_id(), user_account, AGORA_IOT_CLIENT_ID_MAX_LEN) ||
-        0 == strlen(user_account) || 0 != device_get_item_string(dev_state, "license", &license)) {
+#ifdef LICENSE_PID_ACTIVE
+        0 == strlen(user_account) || 0 != device_get_item_string(dev_state, "license", &license))
+#else
+        0 == strlen(user_account))
+#endif
+    {
       // active device if cannot found license info or cannot found bind user info
       if (0 != activate_device(dev_state)) {
         ESP_LOGE(TAG, "cannot activate device !\n");
@@ -1465,10 +1470,12 @@ static agora_iot_handle_t connect_agora_iot_service(device_handle_t dev_state)
   }
   ESP_LOGE(TAG, "connect_agora_iot_service 1st\n");
 
+#ifdef LICENSE_PID_ACTIVE
   if (0 != device_get_item_string(dev_state, "license", &license)) {
     ESP_LOGE(TAG, "cannot found license in device state items\n");
     goto agora_iot_err;
   }
+#endif
 
   if (0 != device_get_item_string(dev_state, "product_key", &product_key)) {
     ESP_LOGE(TAG, "cannot found product_key in device state items\n");
@@ -1485,7 +1492,11 @@ static agora_iot_handle_t connect_agora_iot_service(device_handle_t dev_state)
     .client_key  = dev_key,
     .user_id     = user_id,
     .enable_rtc  = true,
+#ifdef LICENSE_PID_ACTIVE
     .certificate = license,
+#else
+    .certificate = "\0",
+#endif
     .enable_recv_audio = true,
     .enable_recv_video = false,
     .area_code         = AGO_AREA_CODE_GLOB,
@@ -1498,7 +1509,7 @@ static agora_iot_handle_t connect_agora_iot_service(device_handle_t dev_state)
       .cb_key_frame_requested    = iot_cb_key_frame_requested,
     },
     .disable_rtc_log      = true,
-    .log_level            = AGORA_LOG_WARNING,
+    .log_level            = AGORA_LOG_ERROR,
     .max_possible_bitrate = BWE_MAX_BPS,
     .enable_audio_config  = true,
     .audio_config = {
