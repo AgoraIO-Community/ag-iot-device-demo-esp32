@@ -1028,7 +1028,7 @@ static void iot_cb_start_push_frame(uint8_t push_type)
 
 static void iot_cb_stop_push_frame(uint8_t push_type)
 {
-  ESP_LOGI(TAG, "Stop push audio/video frames: push_type %x", push_type);
+  ESP_LOGE(TAG, "Stop push audio/video frames: push_type %x", push_type);
   if ((push_type & AGO_AV_PUSH_TYPE_MASK_RTC) == AGO_AV_PUSH_TYPE_MASK_RTC) {
     g_app.b_call_session_started = false;
   }
@@ -1065,9 +1065,7 @@ static void iot_cb_call_answered(const char *peer_name)
 
 static void iot_cb_call_timeout(const char *peer_name)
 {
-  if (!peer_name) {
-    ESP_LOGI(TAG, "No answer from peer \"%s\"", peer_name);
-  }
+  ESP_LOGE(TAG, "call timeout.\r\n");
 }
 
 static void iot_cb_receive_video_frame(ago_video_frame_t *frame)
