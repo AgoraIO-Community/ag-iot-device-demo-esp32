@@ -60,6 +60,12 @@ typedef union {
   int dp_int;
   bool dp_bool;
   unsigned int dp_enum;
+  /*
+   * Attention: You have to free it youself, 
+                It is recommended to use global variables for on_dp_query_callback(),
+   *            maybe memory leak if you malloc a new block, 
+   *            and never use local variables that will be destroyed when callback function return
+   */
   char *dp_str;
 } agora_dp_value_t;
 

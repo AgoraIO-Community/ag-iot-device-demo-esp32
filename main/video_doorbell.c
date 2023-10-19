@@ -27,7 +27,6 @@
 #include <sys/param.h>
 #include "app_config.h"
 #include "agora_iot_api.h"
-#include "agora_iot_call.h"
 #include "agora_iot_device_manager.h"
 
 #include "doorbell_dp_common.h"
@@ -101,9 +100,13 @@ static const char *TAG = "Agora";
 #define CONFIG_AUDIO_PLAY_BUF_LEN   CONFIG_PCM_DATA_LEN * 20
 
 typedef struct {
+  char ssid[32];
+  char pwd[64];
+} wifi_info_t;
+
+typedef struct {
   bool b_wifi_connected;
   bool b_call_session_started;
-  bool b_oss_session_started;
   bool b_exit;
   sys_up_mode_e up_mode;
   bool b_sntp_synced;
@@ -116,7 +119,6 @@ typedef struct {
 
 static app_t g_app = {
     .b_call_session_started = false,
-    .b_oss_session_started  = false,
     .b_wifi_connected       = false,
     .b_exit                 = false,
     .up_mode                = SYS_UP_MODE_POWERON,
@@ -254,7 +256,6 @@ static camera_config_t camera_config = {
 static void *jpg_encoder;
 #endif
 
-static agora_iot_handle_t g_handle = NULL;
 static device_handle_t dev_state = NULL;
 
 static uint32_t image_cnt = 0;
@@ -277,8 +278,6 @@ static QueueHandle_t    g_qr_queue;
 static audio_thread_t *g_audio_play_thread;
 static RingbufHandle_t g_audio_play_ringbuf = NULL;  /* handle of ringbuffer for audio play */
 
-
-static uint8_t g_push_type = 0x00;
 
 static void __calc_latest_2_sec_video_data_bps(uint32_t video_data_len)
 {
@@ -368,7 +367,7 @@ static void set_es7210_tdm_mode(void)
 
 static void fps_timer_callback(void *arg)
 {
-  if ((g_app.b_call_session_started || g_app.b_oss_session_started) && image_cnt) {
+  if (g_app.b_call_session_started && image_cnt) {
     uint32_t cur_tick = xTaskGetTickCount();
     uint32_t duration = cur_tick - tick_begin;
 
@@ -390,52 +389,23 @@ static esp_err_t input_key_service_cb(periph_service_handle_t handle, periph_ser
   if (evt->type == INPUT_KEY_SERVICE_ACTION_CLICK) {
     switch ((int)evt->data) {
     case INPUT_KEY_USER_ID_REC: {
-      char *product_key  = NULL;
       char *user_account = NULL;
-      if (g_handle == NULL) {
-        goto err;
-      }
-      int rval = device_get_item_string(dev_state, "product_key", &product_key);
-      if (0 != rval) {
-        ESP_LOGE(TAG, "device_get_item_string product_key failed\n");
-        goto err;
+      if (0 != device_get_item_string(dev_state, "user_id", &user_account)) {
+        printf("cannot found bind_user in device state items.\n");
+        break;
       }
 
-      user_account = heap_caps_malloc(64, MALLOC_CAP_SPIRAM);
-      if (user_account == NULL) {
-        ESP_LOGE(TAG, "user_account malloc failed\n");
-        goto err;
+      if (0 != agora_iot_call(user_account, "This is a call test")) {
+        ESP_LOGE(TAG, "call user %s failed...\n", user_account);
       }
 
-      rval = agora_iot_query_user(CONFIG_MASTER_SERVER_URL, product_key, get_device_id(), user_account, AGORA_IOT_CLIENT_ID_MAX_LEN);
-      if (0 != rval) {
-        ESP_LOGE(TAG, "query device manager user failed\n");
-        goto err;
-      }
-
-      if (0 == strlen(user_account)) {
-        goto err;
-      }
-
-      rval = agora_iot_call(g_handle, user_account, "I'm the guest");
-      if (rval == ERR_AG_CALL_SUCCESS) {
-        ESP_LOGW(TAG, "Now ring the bell and call user %s ...\n", user_account);
-      }
-  err:
       if (user_account) {
         free(user_account);
       }
-      if (product_key) {
-        free(product_key);
-      }
     } break;
     case INPUT_KEY_USER_ID_VOLUP:
-      if (g_handle == NULL) {
-        return ESP_FAIL;
-      }
-
       ESP_LOGW(TAG, "Hang up the call.");
-      agora_iot_hang_up(g_handle);
+      agora_iot_hang_up();
       g_app.b_call_session_started = false;
       break;
     case INPUT_KEY_USER_ID_VOLDOWN:
@@ -447,30 +417,9 @@ static esp_err_t input_key_service_cb(periph_service_handle_t handle, periph_ser
       ESP_LOGW(TAG, "Erase the nvs flash %d...", ret);
     } break;
     case INPUT_KEY_USER_ID_MUTE: {
-      if (g_app.b_sntp_synced == false) {
-        ESP_LOGW(TAG, "wait for time sync...");
-        break;
-      }
-
-      struct timeval tv;
-      if (gettimeofday (&tv, NULL) < 0) {
-        printf("#### query system time failure\n");
-        break;
-      }
-      unsigned long long begin_time = (unsigned long long)((uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000);
-
-      agora_iot_file_info_t file_info = {
-        .name_suffix  = "jpeg",
-        .buf          = NULL,
-        .size         = 0
-      };
-      alarm_message_send(g_handle, begin_time, file_info, "nick_esp32", AG_ALARM_TYPE_MOD, "This is a alarm test");
-      int ret = start_alarm_record(g_handle, begin_time);
-      ESP_LOGI(TAG, "start_alarm_record ret %d...", ret);
     } break;
     case INPUT_KEY_USER_ID_PLAY: {
-      int ret = stop_alarm_record(g_handle);
-      ESP_LOGW(TAG, "stop_alarm_record %d...", ret);
+      agora_iot_answer();
     } break;
     default:
       ESP_LOGE(TAG, "User Key ID[%d] does not support", (int)evt->data);
@@ -617,8 +566,6 @@ static esp_err_t recorder_pipeline_close(void)
 {
   audio_pipeline_stop(recorder);
   audio_pipeline_wait_for_stop(recorder);
-  // audio_pipeline_terminate(recorder);
-  // audio_pipeline_unlink(recorder);
   audio_pipeline_deinit(recorder);
 
   return ESP_OK;
@@ -802,12 +749,12 @@ static int send_video_frame(uint8_t *data, uint32_t len)
     int rval = -1;
 
     // API: send video data
-    ago_video_frame_t ago_frame = { 0 };
-    ago_frame.data_type         = AGO_VIDEO_DATA_TYPE_JPEG;
+    agora_video_frame_t ago_frame = { 0 };
+    ago_frame.data_type         = SEND_VIDEO_DATA_TYPE;
     ago_frame.is_key_frame      = true;
     ago_frame.video_buffer      = data;
     ago_frame.video_buffer_size = len;
-    rval = agora_iot_push_video_frame(g_handle, &ago_frame, g_push_type);
+    rval = agora_iot_push_video_frame(&ago_frame);
     if (rval < 0) {
         ESP_LOGE(TAG, "Failed to push video frame");
         return -1;
@@ -830,7 +777,7 @@ static void video_capture_and_send_task(void *args)
   while (1) {
     xSemaphoreTake(g_video_capture_sem, portMAX_DELAY);
 
-    while (g_app.b_call_session_started || g_app.b_oss_session_started) {
+    while (g_app.b_call_session_started) {
       camera_fb_t *pic = esp_camera_fb_get();
 
 #ifndef UVC_STREAM_ENABLE
@@ -869,11 +816,11 @@ static int send_audio_frame(uint8_t *data, uint32_t len)
   int rval = -1;
 
   // API: send audio data
-  ago_audio_frame_t ago_frame = { 0 };
-  ago_frame.data_type         = AGO_AUDIO_DATA_TYPE_PCM;
+  agora_audio_frame_t ago_frame = { 0 };
+  ago_frame.data_type         = SEND_AUDIO_DATA_TYPE;
   ago_frame.audio_buffer      = data;
   ago_frame.audio_buffer_size = len;
-  rval = agora_iot_push_audio_frame(g_handle, &ago_frame, g_push_type);
+  rval = agora_iot_push_audio_frame(&ago_frame);
   if (rval < 0) {
     ESP_LOGE(TAG, "Failed to push audio frame");
     return -1;
@@ -903,7 +850,7 @@ static void audio_capture_and_send_task(void *threadid)
 
     audio_pipeline_run(recorder);
 
-    while (g_app.b_call_session_started || g_app.b_oss_session_started) {
+    while (g_app.b_call_session_started) {
       ret = raw_stream_read(raw_read, (char *)pcm_buf, read_len);
       if (ret != read_len) {
         ESP_LOGW(TAG, "write error, expect %d, but only %d", read_len, ret);
@@ -979,94 +926,51 @@ static void iot_cb_call_request(const char *peer_name, const char *attach_msg)
   if (!peer_name) {
     return;
   }
-
   ESP_LOGI(TAG, "Get call from peer \"%s\", attach message: %s", peer_name, attach_msg ? attach_msg : "null");
 
-  agora_iot_answer(g_handle);
+  agora_iot_answer();
 }
 
-static void iot_cb_start_push_frame(uint8_t push_type)
+static void iot_cb_start_push_frame(void)
 {
-  ESP_LOGI(TAG, "Start push audio/video frames: push_type %x", push_type);
-  if ((push_type & AGO_AV_PUSH_TYPE_MASK_RTC) == AGO_AV_PUSH_TYPE_MASK_RTC) {
-    g_app.b_call_session_started = true;
+  ESP_LOGI(TAG, "Start push audio/video frames");
+  g_app.b_call_session_started = true;
 
-    g_audio_play_ringbuf = xRingbufferCreate(CONFIG_AUDIO_PLAY_BUF_LEN, RINGBUF_TYPE_BYTEBUF);
-    esp_err_t rval = audio_thread_create(g_audio_play_thread, "audio_play_task", audio_play_task, NULL, 2 * 1024, PRIO_TASK_FETCH, true, 0);
-    if (rval != ESP_OK) {
-      ESP_LOGE(TAG, "Unable to create audio play thread!");
-      return;
-    }
+  g_audio_play_ringbuf = xRingbufferCreate(CONFIG_AUDIO_PLAY_BUF_LEN, RINGBUF_TYPE_BYTEBUF);
+  esp_err_t rval = audio_thread_create(g_audio_play_thread, "audio_play_task", audio_play_task, NULL, 2 * 1024, PRIO_TASK_FETCH, true, 0);
+  if (rval != ESP_OK) {
+    ESP_LOGE(TAG, "Unable to create audio play thread!");
+    return;
   }
 
-  if ((push_type & AGO_AV_PUSH_TYPE_MASK_OSS) == AGO_AV_PUSH_TYPE_MASK_OSS) {
-    g_app.b_oss_session_started  = true;
-  }
-
-  if (g_push_type == 0) {
 #ifdef UVC_STREAM_ENABLE
-    uvc_streaming_resume();
+  uvc_streaming_resume();
 #endif //#ifdef UVC_STREAM_ENABLE
 
 #ifndef CONFIG_AUDIO_ONLY
-    xSemaphoreGive(g_video_capture_sem);
+  xSemaphoreGive(g_video_capture_sem);
 #endif
 
-    xSemaphoreGive(g_audio_capture_sem);
-  }
-
-  // record push type
-  g_push_type |= push_type;
+  xSemaphoreGive(g_audio_capture_sem);
 }
 
-static void iot_cb_stop_push_frame(uint8_t push_type)
+static void iot_cb_stop_push_frame(void)
 {
-  ESP_LOGI(TAG, "Stop push audio/video frames: push_type %x", push_type);
-  if ((push_type & AGO_AV_PUSH_TYPE_MASK_RTC) == AGO_AV_PUSH_TYPE_MASK_RTC) {
-    g_app.b_call_session_started = false;
-  }
+  ESP_LOGI(TAG, "Stop push audio/video frames");
+  g_app.b_call_session_started = false;
 
-  if ((push_type & AGO_AV_PUSH_TYPE_MASK_OSS) == AGO_AV_PUSH_TYPE_MASK_OSS) {
-    g_app.b_oss_session_started = false;
-  }
-
-  // record push type
-  g_push_type &= ~push_type;
-
-  if (g_push_type == 0) {
 #ifdef UVC_STREAM_ENABLE
-    uvc_streaming_suspend();
+  uvc_streaming_suspend();
 #endif
-  }
 }
 
-static void iot_cb_call_hung_up(const char *peer_name)
-{
-  if (!peer_name) {
-    ESP_LOGI(TAG, "Get hangup from peer \"%s\"", peer_name);
-  }
-}
-
-static void iot_cb_call_answered(const char *peer_name)
-{
-  if (!peer_name) {
-    ESP_LOGI(TAG, "Get answer from peer \"%s\"", peer_name);
-  }
-}
-
-static void iot_cb_call_timeout(const char *peer_name)
-{
-  if (!peer_name) {
-    ESP_LOGI(TAG, "No answer from peer \"%s\"", peer_name);
-  }
-}
-
-static void iot_cb_receive_video_frame(ago_video_frame_t *frame)
+static void iot_cb_receive_video_frame(agora_video_frame_t *frame)
 {
 }
 
-static void iot_cb_receive_audio_frame(ago_audio_frame_t *frame)
+static void iot_cb_receive_audio_frame(agora_audio_frame_t *frame)
 {
+  // printf("recv audio audio_frame_size %d\n", frame->audio_buffer_size);
   if (frame->audio_buffer_size > xRingbufferGetCurFreeSize(g_audio_play_ringbuf)) {
     printf("recv audio frame not enough buff, free size: %d\n", xRingbufferGetCurFreeSize(g_audio_play_ringbuf));
   }
@@ -1195,9 +1099,10 @@ static void qr_recoginze(void *parameter)
 }
 #endif
 
-static int parse_config_content(device_handle_t dev_state, const char *content, char *ssid, char *pwd)
+static int parse_config_content(device_handle_t dev_state, const char *content, wifi_info_t *info)
 {
   int ret     = -1;
+  char *temp  = NULL;
 
   cJSON *root = cJSON_Parse(content);
   if (NULL == root) {
@@ -1207,9 +1112,10 @@ static int parse_config_content(device_handle_t dev_state, const char *content, 
 
   // get ssid
   cJSON *item = cJSON_GetObjectItemCaseSensitive(root, "s");
-  ssid = cJSON_GetStringValue(item); 
-  if (ssid != NULL) {
-    device_set_item_string(dev_state, "ssid", ssid);
+  temp = cJSON_GetStringValue(item);
+  if (temp != NULL) {
+    device_set_item_string(dev_state, "ssid", temp);
+    memcpy(info->ssid, temp, 32);
   } else {
     printf("#### cannot found ssid!\n");
   }
@@ -1217,20 +1123,12 @@ static int parse_config_content(device_handle_t dev_state, const char *content, 
 
   // get pws
   item = cJSON_GetObjectItemCaseSensitive(root, "p");
-  pwd = cJSON_GetStringValue(item);
-  if (pwd != NULL) {
-    device_set_item_string(dev_state, "password", pwd);
+  temp = cJSON_GetStringValue(item);
+  if (info->pwd != NULL) {
+    device_set_item_string(dev_state, "password", temp);
+    memcpy(info->pwd, temp, 64);
   } else {
     printf("#### cannot found password!\n");
-  }
-  item = NULL;
-
-  // get product key
-  item = cJSON_GetObjectItemCaseSensitive(root, "k");
-  if (cJSON_GetStringValue(item)) {
-    device_set_item_string(dev_state, "product_key", cJSON_GetStringValue(item));
-  } else {
-    printf("#### cannot found  product key!\n");
   }
   item = NULL;
 
@@ -1240,16 +1138,6 @@ static int parse_config_content(device_handle_t dev_state, const char *content, 
     device_set_item_string(dev_state, "user_id", cJSON_GetStringValue(item));
   } else {
     printf("#### cannot found user id!\n");
-  }
-  item = NULL;
-
-  // get device name
-  item = cJSON_GetObjectItemCaseSensitive(root, "n");
-  if (cJSON_GetStringValue(item)) {
-    device_set_item_string(dev_state, "device_name", cJSON_GetStringValue(item));
-  } else {
-    printf("#### cannot found device_name, use the default: %s !\n", get_device_id());
-    device_set_item_string(dev_state, "device_name", get_device_id());
   }
   item = NULL;
   ret = 0;
@@ -1287,8 +1175,22 @@ static int device_connect_network(char *ssid, char *psw)
 static int agora_network_config(device_handle_t dev_state)
 {
   char config_buff[CONFIG_CONTENT_LEN + 1] = { 0 };
-  char ssid[32] = { 0 };
-  char pwd[64]  = { 0 };
+  wifi_info_t info = { 0 };
+
+  // product info, include wifi info, user-id, productkey
+  strcpy(config_buff, "{\"s\":\"OpenWrt-NX-2.4G\",\"p\":\"88888888\",\"u\":\"01H5PRPGAXZM0S737MCKWYAGE2\",\"k\":\"EJIJEIm68gl5b5lI4\"}");
+
+  if (parse_config_content(dev_state, config_buff, &info) == 0) {
+    setup_wifi();
+    device_connect_network(info.ssid, info.pwd);
+
+    // Wait until WiFi is connected
+    while (!g_app.b_wifi_connected) {
+      vTaskDelay(10 / portTICK_PERIOD_MS);
+    }
+
+    return 0;
+  }
 
 #ifdef CONFIG_BLUFI_ENABLE
   // setup wifi and Wait until WiFi is connected
@@ -1301,7 +1203,7 @@ extern void setup_wifi_with_block(char *cfg);
   esp_wifi_set_ps(WIFI_PS_NONE);
 #endif
 
-  return parse_config_content(dev_state, config_buff, ssid, pwd);
+  return parse_config_content(dev_state, config_buff, &info);
 #else // CONFIG_BLUFI_ENABLE 
   ESP_LOGI(TAG, "\n\n------------------ Please input QRcode string with JSON type ----------------------\n");
 
@@ -1321,9 +1223,9 @@ extern void setup_wifi_with_block(char *cfg);
   ESP_LOGI(TAG, "-------------------- Got string and parse it now ------------------------------------\n");
 
   // parse content
-  if (parse_config_content(dev_state, config_buff, ssid, pwd) == 0) {
+  if (parse_config_content(dev_state, config_buff, &info) == 0) {
     setup_wifi();
-    return device_connect_network(ssid, pwd);
+    return device_connect_network(info.ssid, info.pwd);
   } else
     return -1;
 #endif // CONFIG_BLUFI_ENABLE
@@ -1347,8 +1249,7 @@ static device_handle_t agora_device_bringup(sys_up_mode_e mode)
 {
   char *ssid    = NULL;
   char *psw     = NULL;
-  char *license = NULL;
-  char *product_key = NULL;
+  char *activate_res = NULL;
 
   // 1. load device state config
   device_handle_t dev_state = load_devic_state();
@@ -1395,17 +1296,10 @@ static device_handle_t agora_device_bringup(sys_up_mode_e mode)
 
   sntp_set_sync();
 
-  if (0 != device_get_item_string(dev_state, "product_key", &product_key)) {
-    ESP_LOGE(TAG, "cannot found product_key in device state items\n");
-    goto dev_bringup_err;
-  }
-
   // 4. activate the device
-  char user_account[64] = { 0 };
   if (SYS_UP_MODE_WAKEUP != mode) {
     // maybe nee to avtiate device if was not wakeup frome low-power mode
-    if (SYS_UP_MODE_RESTORE == mode || 0 != agora_iot_query_user(CONFIG_MASTER_SERVER_URL, product_key, get_device_id(), user_account, AGORA_IOT_CLIENT_ID_MAX_LEN) ||
-        0 == strlen(user_account) || 0 != device_get_item_string(dev_state, "license", &license)) {
+    if (SYS_UP_MODE_RESTORE == mode || 0 != device_get_item_string(dev_state, "activate_res", &activate_res)) {
       // active device if cannot found license info or cannot found bind user info
       if (0 != activate_device(dev_state)) {
         ESP_LOGE(TAG, "cannot activate device !\n");
@@ -1417,8 +1311,16 @@ static device_handle_t agora_device_bringup(sys_up_mode_e mode)
     }
   }
 
-  if (license) {
-    free(license);
+  if (ssid) {
+    free(ssid);
+  }
+
+  if (psw) {
+    free(psw);
+  }
+
+  if (activate_res) {
+    free(activate_res);
   }
   return dev_state;
 
@@ -1427,106 +1329,67 @@ dev_bringup_err:
     device_destroy_state(dev_state);
   }
 
-  if (license) {
-    free(license);
+  if (activate_res) {
+    free(activate_res);
+  }
+
+  if (ssid) {
+    free(ssid);
+  }
+
+  if (psw) {
+    free(psw);
   }
   return NULL;
 }
 
-static agora_iot_handle_t connect_agora_iot_service(device_handle_t dev_state)
+static int connect_agora_iot_service(device_handle_t dev_state)
 {
-  agora_iot_handle_t handle = NULL;
-  char *domain = NULL;
-  char *dev_crt = NULL;
-  char *dev_key = NULL;
-  char *license = NULL;
-  char *product_key = NULL;
-  char *client_id = NULL;
-  char *user_id = NULL;
+  int ret = -1;
+  char *activate_res = NULL;
 
-  if (0 != device_get_item_string(dev_state, "dev_crt", &dev_crt) ||
-      0 != device_get_item_string(dev_state, "dev_key", &dev_key) ||
-      0 != device_get_item_string(dev_state, "domain", &domain)   ||
-      0 != device_get_item_string(dev_state, "client_id", &client_id) ||
-      0 != device_get_item_string(dev_state, "bind_user", &user_id)) {
-    ESP_LOGE(TAG, "cannot found dev_crt or dev_key or domain in device state items\n");
-    goto agora_iot_err;
-  }
 
-  if (0 != device_get_item_string(dev_state, "license", &license)) {
-    ESP_LOGE(TAG, "cannot found license in device state items\n");
-    goto agora_iot_err;
-  }
-
-  if (0 != device_get_item_string(dev_state, "product_key", &product_key)) {
-    ESP_LOGE(TAG, "cannot found product_key in device state items\n");
+  if (0 != device_get_item_string(dev_state, "activate_res", &activate_res)) {
+    ESP_LOGE(TAG, "cannot found activate_res in device state items\n");
     goto agora_iot_err;
   }
 
   agora_iot_config_t cfg = {
-    .app_id      = CONFIG_AGORA_APP_ID,
-    .product_key = product_key,
-    .client_id   = client_id,
-    .domain      = domain,
-    .root_ca     = CONFIG_AWS_ROOT_CA,
-    .client_crt  = dev_crt,
-    .client_key  = dev_key,
-    .user_id     = user_id,
-    .enable_rtc  = true,
-    .certificate = license,
-    .enable_recv_audio = true,
-    .enable_recv_video = false,
-    .area_code         = AGO_AREA_CODE_GLOB,
-    .rtc_cb = {
-      .cb_start_push_frame    = iot_cb_start_push_frame,
-      .cb_stop_push_frame     = iot_cb_stop_push_frame,
-      .cb_receive_audio_frame = iot_cb_receive_audio_frame,
-      .cb_receive_video_frame = iot_cb_receive_video_frame,
-      .cb_target_bitrate_changed = iot_cb_target_bitrate_changed,
-      .cb_key_frame_requested    = iot_cb_key_frame_requested,
+    .app_id                     = CONFIG_AGORA_APP_ID,
+    .activate_res               = activate_res,
+    .event_handler = {
+      .on_start_push_frame        = iot_cb_start_push_frame,
+      .on_stop_push_frame         = iot_cb_stop_push_frame,
+      .on_receive_audio_frame     = iot_cb_receive_audio_frame,
+      .on_receive_video_frame     = iot_cb_receive_video_frame,
+      .on_target_bitrate_changed  = iot_cb_target_bitrate_changed,
+      .on_key_frame_requested     = iot_cb_key_frame_requested,
+      .on_call_request            = iot_cb_call_request,
     },
-    .disable_rtc_log      = true,
-    .log_level            = AGORA_LOG_INFO,
-    .max_possible_bitrate = BWE_MAX_BPS,
-    .enable_audio_config  = true,
-    .audio_config = {
-      .audio_codec_type = AUDIO_CODEC_TYPE,
-#if defined(CONFIG_SEND_PCM_DATA)
-      .pcm_sample_rate  = CONFIG_PCM_SAMPLE_RATE,
-      .pcm_channel_num  = I2S_CHANNELS,
-#endif
+    .audio_codec                  = INTERNAL_AUDIO_ENC_TYPE,
+    .max_possible_bitrate         = DEFAULT_MAX_BITRATE,
+    .min_possible_bitrate         = DEFAULT_MIN_BITRATE,
+    .area_code                    = AGORA_AREA_CODE_GLOB,
+    .log_cfg = {
+      .disable_log                = true,
+      .log_level                  = AGORA_LOG_WARNING,
     },
-
-    .slave_server_url = CONFIG_SLAVE_SERVER_URL,
-    .call_mode        = CALL_MODE_MUTLI,
-    .call_cb = {
-      .cb_call_request       = iot_cb_call_request,
-      .cb_call_answered      = iot_cb_call_answered,
-      .cb_call_hung_up       = iot_cb_call_hung_up,
-      .cb_call_local_timeout = iot_cb_call_timeout,
-      .cb_call_peer_timeout  = iot_cb_call_timeout,
-    },
+    .enable_multi_users           = true
   };
-  handle = agora_iot_init(&cfg);
-  if (NULL == handle) {
+
+  ret = agora_iot_init(&cfg);
+  if (0 != ret) {
     ESP_LOGE(TAG, "agora_iot_init failed\n");
     goto agora_iot_err;
   }
 
+  ESP_LOGI(TAG, "agora_iot_init success.\n");
+
 agora_iot_err:
-  if (domain) {
-    free(domain);
+  if (activate_res) {
+    free(activate_res);
   }
-  if (dev_crt) {
-    free(dev_crt);
-  }
-  if (dev_key) {
-    free(dev_key);
-  }
-  if (license) {
-    free(license);
-  }
-  return handle;
+  return ret;
 }
 
 
@@ -1641,6 +1504,8 @@ int app_main(void)
 #endif //#ifdef UVC_STREAM_ENABLE
 #endif
 
+  setup_audio();
+
   g_app.up_mode = SYS_UP_MODE_POWERON;
 
   ESP_LOGI(TAG, "step1: start init\n");
@@ -1654,21 +1519,13 @@ int app_main(void)
 
   ESP_LOGI(TAG, "step2: device bringup ok\n");
   // connect to agora iot service
-  g_handle = connect_agora_iot_service(dev_state);
-  if (NULL == g_handle) {
+  ret = connect_agora_iot_service(dev_state);
+  if (0 != ret) {
     ESP_LOGE(TAG, "connect_agora_iot_service failed.\n");
     goto EXIT;
   }
 
-  setup_audio();
-
   create_capture_task();
-
-  // update device state
-  if (0 != update_device_work_state(g_handle, g_app.up_mode)) {
-    ESP_LOGE(TAG, "agora_iot_init failed\n");
-    goto EXIT;
-  }
 
   // Infinite loop
   while (!g_app.b_exit) {
@@ -1693,9 +1550,7 @@ int app_main(void)
 
 EXIT:
   // Deinit Agora IoT SDK
-  if (g_handle) { 
-    agora_iot_deinit(g_handle);
-  }
+    agora_iot_fini();
 
   if (dev_state) {
     device_destroy_state(dev_state);

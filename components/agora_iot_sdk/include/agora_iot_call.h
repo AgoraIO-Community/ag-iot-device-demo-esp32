@@ -128,7 +128,7 @@ typedef struct agora_iot_call_callback {
     * @brief Occurs when outgoing call, but peer do not answer or hung up.
     *
     * Local is a caller, peer is a callee.
-    *
+    *agora_call_mode_e
     * @param[in] peer_id:     The peer id.
     */
   void (*cb_call_peer_timeout)(const char *peer_id);
